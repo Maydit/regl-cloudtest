@@ -9,11 +9,31 @@ varying vec2 uv;
 uniform float viewportWidth, viewportHeight;
 uniform mat4 invProjection, invView;
 
+//DEF FUNCS
+vec3 atmosphere(
+    vec3 r, 
+    vec3 eyePos, 
+    vec3 sunDir, 
+    float iSun, 
+    float rPlanet, 
+    float rAtmos, 
+    vec3 kRlh, 
+    float kMie, 
+    float shRlh, 
+    float shMie, 
+    float g);
+vec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr);
+vec3 sampleAtmosphere (
+    vec3 ray,
+    vec3 sunDirection);
+
+
+
+
 void main() {
     vec4 farRay = invView * invProjection * vec4(uv, 1, 1);
     vec4 nearRay = invView * invProjection * vec4(uv, 0, 1);
     vec3 position = normalize(farRay.xyz * nearRay.w - nearRay.xyz * farRay.w);
-
     vec3 sunDirection = vec3(1.0,0.0,1.0);
 
     vec3 c = sampleAtmosphere(position, sunDirection);
@@ -143,50 +163,3 @@ vec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr) {
     (-b + sqrt(det))/(2.0*a)
   );
 }
-
-/*
-float heightSignal(vec2 weather, vec3 pos) {
-  float height = weather.x;
-  float alt = weather.y;
-  //height in [0,1]
-  //alt in [0,255]
-  float invHeight = height==0.0 ? 0.0 : 1.0 / height;
-  float altDiff = alt - 0.0; //start = 0 ? check this works.
-  return altDiff * (altDiff - height) * invHeight * invHeight * -4.0;
-}
-
-float heightGradient(vec2 weather, vec3 pos) {
-  float alt = weather.y;
-  return alt / 255.;
-}
-
-float getCloudShape(vec3 pos) {
-  //sum worley noise channels and multiply by perlin noise channel.
-  vec2 shapeCoord = fract(pos.xz / 128.);
-  vec4 shape = Texture2D(cloudShapeAtlas, shapeCoord);
-  return (shape.y + shape.z + shape.w) * shape.x;
-}
-
-float getCloudDetail(vec3 pos) {
-  //sum worley noise ?
-  vec2 detailCoord = fract(pos.xz / 32.);
-  vec4 detail = Texture2D(cloudDetailAtlas, detailCoord);
-  float res = (detail.x + detail.y + detail.z);
-  return res;
-}
-
-//Algorithm modified from
-//http://www.cse.chalmers.se/~uffe/xjobb/RurikH%C3%B6gfeldt.pdf
-float getDensity(vec3 pos, float trueHeight) {
-  vec2 weatherTexCoord = fract(pos.xz / 1024.);
-  vec4 weather = Texture2D(weatherAtlas, weatherTexCoord);
-  weather = vec4(weather.r / 255., weather.g / 255., weather.b, 0.0);
-  float density = weather.r;
-  density *= heightSignal(weather.gb,pos);
-  density *= getCloudShape(pos);
-  density -= getCloudDetail(pos);
-  density *= heightGradient(weather.gb,pos);
-  density = clamp(density, 0.0, 1.0);
-  return density;
-}
-*/

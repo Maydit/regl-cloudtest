@@ -6,12 +6,34 @@ const regl = require('regl')({
   canvas: document.getElementById('regl-canvas'),
 });
 
+const setup = regl({
+  context: {
+    view: ({tick}) => {
+      const t = 0.01 * tick
+      return mat4.lookAt([],
+        [30 * Math.cos(t), 2.5, 30 * Math.sin(t)],
+        [0, 2.5, 0],
+        [0, 1, 0])
+    },
+    projection: ({viewportWidth, viewportHeight}) =>
+    mat4.perspective([],
+      Math.PI / 4,
+      viewportWidth / viewportHeight,
+      0.01,
+      1000),
+    invView: (view) => mat4.invert([], view),
+    invProjection: (projection) => mat4.invert([], projection)
+  }
+})
+
 regl.frame(() => {
   regl.clear({
     color: [0,0,0,1]
   })
-  //drawSky()
-  drawBunny()
+  setup(() => {
+    drawSky()
+    drawBunny()
+  })
 })
 
 const drawBunny = regl({
@@ -25,23 +47,12 @@ const drawBunny = regl({
   frag: `
   precision mediump float;
   void main() {
-    gl_FragColor = vec4(1, 1, 1, 1);
+    gl_FragColor = vec4(0, 1, 1, 1);
   }`,
   uniforms: {
     model: mat4.identity([]),
-    view: ({tick}) => {
-      const t = 0.01 * tick
-      return mat4.lookAt([],
-        [30 * Math.cos(t), 2.5, 30 * Math.sin(t)],
-        [0, 2.5, 0],
-        [0, 1, 0])
-    },
-    projection: ({viewportWidth, viewportHeight}) =>
-      mat4.perspective([],
-        Math.PI / 4,
-        viewportWidth / viewportHeight,
-        0.01,
-        1000)
+    view: regl.context('view'),
+    projection: regl.context('projection')
   },
   attributes: {
     position: bunny.positions,
@@ -55,21 +66,8 @@ const drawSky = regl({
   uniforms: {
     viewportHeight: regl.context('viewportHeight'),
     viewportWidth: regl.context('viewportWidth'),
-    view: ({tick}) => {
-      const t = 0.01 * tick
-      return mat4.lookAt([],
-        [30 * Math.cos(t), 2.5, 30 * Math.sin(t)],
-        [0, 2.5, 0],
-        [0, 1, 0])
-    },
-    projection: ({viewportWidth, viewportHeight}) =>
-      mat4.perspective([],
-        Math.PI / 4,
-        viewportWidth / viewportHeight,
-        0.01,
-        1000),
-    invView: ({view}) => mat4.invert([], view),
-    invProjection: ({projection}) => mat4.invert([], projection),
+    invView: regl.context('invView'),
+    invProjection: regl.context('invProjetion')
   },
   attributes: {
     position:
@@ -79,8 +77,5 @@ const drawSky = regl({
         4, 4,
       ],
   },
-  count: 3,
-  primitive: 'triangles',
-  offset: 0,
-  elements: null
+  count: 3
 })

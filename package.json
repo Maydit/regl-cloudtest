@@ -5,7 +5,7 @@
   "main": "src/index.js",
   "scripts": {
     "test": "test",
-    "start": "browserify ./src/index.ts -p [ tsify ] > bundle.js && http-server ."
+    "start": "browserify -t [ glslify --transform glslify-import ] ./src/index.ts -p [ tsify ] > bundle.js && http-server ."
   },
   "repository": {
     "type": "git",
@@ -22,17 +22,12 @@
   },
   "homepage": "https://github.com/Maydit/regl-cloudtest#readme",
   "dependencies": {
-    "angle-normals": "^1.0.0",
     "budo": "^11.2.2",
     "bunny": "^1.0.1",
     "gl-mat4": "^1.2.0",
-    "gl-matrix": "^2.6.1",
     "glslify": "^6.1.1",
     "http-server": "^0.11.1",
-    "mouse-change": "^1.4.0",
-    "mouse-wheel": "^1.2.0",
-    "regl": "^1.3.0",
-    "vec3": "^0.1.3"
+    "regl": "^1.3.0"
   },
   "devDependencies": {
     "@types/node": "^9.3.0",

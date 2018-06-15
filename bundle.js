@@ -1227,6 +1227,18 @@ function transpose(out, a) {
     return out;
 };
 },{}],32:[function(require,module,exports){
+module.exports = function(strings) {
+  if (typeof strings === 'string') strings = [strings]
+  var exprs = [].slice.call(arguments,1)
+  var parts = []
+  for (var i = 0; i < strings.length-1; i++) {
+    parts.push(strings[i], exprs[i] || '')
+  }
+  parts.push(strings[i])
+  return parts.join('')
+}
+
+},{}],33:[function(require,module,exports){
 (function(pa,W){"object"===typeof exports&&"undefined"!==typeof module?module.exports=W():"function"===typeof define&&define.amd?define(W):pa.createREGL=W()})(this,function(){function pa(a,b){this.id=Ab++;this.type=a;this.data=b}function W(a){if(0===a.length)return[];var b=a.charAt(0),c=a.charAt(a.length-1);if(1<a.length&&b===c&&('"'===b||"'"===b))return['"'+a.substr(1,a.length-2).replace(/\\/g,"\\\\").replace(/"/g,'\\"')+'"'];if(b=/\[(false|true|null|\d+|'[^']*'|"[^"]*")\]/.exec(a))return W(a.substr(0,
 b.index)).concat(W(b[1])).concat(W(a.substr(b.index+b[0].length)));b=a.split(".");if(1===b.length)return['"'+a.replace(/\\/g,"\\\\").replace(/"/g,'\\"')+'"'];a=[];for(c=0;c<b.length;++c)a=a.concat(W(b[c]));return a}function Za(a){return"["+W(a).join("][")+"]"}function Bb(){var a={"":0},b=[""];return{id:function(c){var e=a[c];if(e)return e;e=a[c]=b.length;b.push(c);return e},str:function(a){return b[a]}}}function Cb(a,b,c){function e(){var b=window.innerWidth,e=window.innerHeight;a!==document.body&&
 (e=a.getBoundingClientRect(),b=e.right-e.left,e=e.bottom-e.top);f.width=c*b;f.height=c*e;D(f.style,{width:b+"px",height:e+"px"})}var f=document.createElement("canvas");D(f.style,{border:0,margin:0,padding:0,top:0,left:0});a.appendChild(f);a===document.body&&(f.style.position="absolute",D(a.style,{margin:0,padding:0}));window.addEventListener("resize",e,!1);e();return{canvas:f,onDestroy:function(){window.removeEventListener("resize",e);a.removeChild(f)}}}function Db(a,b){function c(c){try{return a.getContext(c,
@@ -1378,26 +1390,17 @@ a.framebuffer_reglType)for(var b=0;6>b;++b)aa(D({framebuffer:a.framebuffer.faces
 case "lost":c=U;break;case "restore":c=Y;break;case "destroy":c=W}c.push(b);return{cancel:function(){for(var a=0;a<c.length;++a)if(c[a]===b){c[a]=c[c.length-1];c.pop();break}}}},limits:Q,hasExtension:function(a){return 0<=Q.extensions.indexOf(a.toLowerCase())},read:z,destroy:function(){F.length=0;e();M&&(M.removeEventListener("webglcontextlost",f),M.removeEventListener("webglcontextrestored",d));R.clear();L.clear();A.clear();w.clear();T.clear();E.clear();x&&x.clear();W.forEach(function(a){a()})},
 _gl:l,_refresh:m,poll:function(){u();x&&x.update()},now:v,stats:t});a.onDone(null,g);return g}});
 
-},{}],33:[function(require,module,exports){
+},{}],34:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+var glsl = require("glslify");
 var mat4 = require("gl-mat4");
 var bunny = require("bunny");
 var regl = require('regl')({
     canvas: document.getElementById('regl-canvas'),
 });
-regl.frame(function () {
-    regl.clear({
-        color: [0, 0, 0, 1]
-    });
-    //drawSky()
-    drawBunny();
-});
-var drawBunny = regl({
-    vert: "\n  precision mediump float;\n  attribute vec3 position;\n  uniform mat4 model, view, projection;\n  void main() {\n    gl_Position = projection * view * model * vec4(position, 1);\n  }",
-    frag: "\n  precision mediump float;\n  void main() {\n    gl_FragColor = vec4(1, 1, 1, 1);\n  }",
-    uniforms: {
-        model: mat4.identity([]),
+var setup = regl({
+    context: {
         view: function (_a) {
             var tick = _a.tick;
             var t = 0.01 * tick;
@@ -1406,47 +1409,54 @@ var drawBunny = regl({
         projection: function (_a) {
             var viewportWidth = _a.viewportWidth, viewportHeight = _a.viewportHeight;
             return mat4.perspective([], Math.PI / 4, viewportWidth / viewportHeight, 0.01, 1000);
-        }
+        },
+        invView: function (view) { return mat4.invert([], view); },
+        invProjection: function (projection) { return mat4.invert([], projection); }
+    }
+});
+regl.frame(function () {
+    regl.clear({
+        color: [0, 0, 0, 1]
+    });
+    setup(function () {
+        drawSky();
+        drawBunny();
+    });
+});
+var t = glsl(["#define PI 3.141592\n#define iSteps 16\n#define jSteps 8\n\nprecision highp float;\n#define GLSLIFY 1\n\nvarying vec2 uv;\n\nuniform float viewportWidth, viewportHeight;\nuniform mat4 invProjection, invView;\n\n//DEF FUNCS\nvec3 atmosphere(\n    vec3 r, \n    vec3 eyePos, \n    vec3 sunDir, \n    float iSun, \n    float rPlanet, \n    float rAtmos, \n    vec3 kRlh, \n    float kMie, \n    float shRlh, \n    float shMie, \n    float g);\nvec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr);\n\nvoid main() {\n    vec4 farRay = invView * invProjection * vec4(uv, 1, 1);\n    vec4 nearRay = invView * invProjection * vec4(uv, 0, 1);\n    vec3 position = normalize(farRay.xyz * nearRay.w - nearRay.xyz * farRay.w);\n    vec3 sunDirection = vec3(1.0,0.0,1.0);\n\n    vec3 c = sampleAtmosphere(position, sunDirection);\n\n    gl_FragColor = vec4(c, 1);\n}\n\nvec3 sampleAtmosphere (\n    vec3 ray,\n    vec3 sunDirection) {\n    return atmosphere(\n                    ray,\n                    vec3(0, 6372e3, 0),\n                    sunDirection,\n                    33.0,\n                    6371e3,\n                    6471e3,\n                    vec3(5.5e-6, 13.0e-6, 22.4e-6),\n                    // vec3( 22.0e-6, 13.0e-6, 11.4e-6), // mars\n                    21e-6,\n                    8e3,\n                    1.2e3,\n                    0.758\n                  );\n}\n\nvec3 atmosphere(\n    vec3 r, \n    vec3 eyePos, \n    vec3 sunDir, \n    float iSun, \n    float rPlanet, \n    float rAtmos, \n    vec3 kRlh, \n    float kMie, \n    float shRlh, \n    float shMie, \n    float g) {\n  sunDir = normalize(sunDir);\n  r = normalize(r);\n\n  vec2 p = ray_vs_sphere(eyePos, r, rAtmos);\n  if (p.x > p.y) {\n    return vec3(0, 0, 0);\n  }\n\n  p.y = min(p.y, ray_vs_sphere(eyePos, r, rPlanet).x);\n  float iStepSize = (p.y - p.x) / float(iSteps);\n\n  float iTime = 0.0;\n\n  vec3 totalRlh = vec3(0,0,0);\n  vec3 totalMie = vec3(0,0,0);\n\n  float iOdRlh = 0.0;\n  float iOdMie = 0.0;\n\n  // compute phase of Rayleigh and Mie\n  // c: Scattering angle\n  float c = dot(r, sunDir);\n  float gg = g*g;\n  float cc = c*c;\n  float pRlh = 3.0 / (16.0*PI) * (1.0+cc);\n  float pMie = 3.0 / (8.0*PI) * ((1.0-gg) * (cc + 1.0)) / (pow(1.0 + gg - 2.0*c*g, 1.5) * (2.0 + gg));\n\n  // samples\n  // todo: add early exit\n  for (int i = 0; i<iSteps; i++) {\n    vec3 iPos = eyePos + r * (iTime + iStepSize * 0.5);\n    float iHeight = length(iPos) - rPlanet;\n\n    float optic_rlh = exp(-iHeight / shRlh) * iStepSize;\n    float optic_mie = exp(-iHeight / shMie) * iStepSize;\n\n    // Accumulate optical depth.\n    iOdRlh += optic_rlh;\n    iOdMie += optic_mie;\n\n    float jStepSize = ray_vs_sphere(eyePos, r, rAtmos).y / float(jSteps);\n\n    float jTime = 0.0;\n\n    // Initialize optical depth accumulators for the secondary ray.\n    float jOdRlh = 0.0;\n    float jOdMie = 0.0;\n\n    for (int j = 0; j < jSteps; j++) {\n      vec3 jPos = iPos + sunDir * (jTime + jStepSize * 0.5);\n\n      float jHeight = length(jPos) - rPlanet;\n\n      jOdRlh += exp(-jHeight / shRlh) * jStepSize;\n      jOdMie += exp(-jHeight / shMie) * jStepSize;\n\n      jTime += jStepSize;\n    }\n    vec3 attn = exp(-(kMie * (iOdMie + jOdMie) + kRlh * (iOdRlh + jOdRlh)));\n\n    totalRlh += optic_rlh * attn;\n    totalMie += optic_mie * attn;\n\n    iTime += iStepSize;\n  }\n\n  if (c > 0.0) {\n    // make sun more bright than other place\n    float X = 1.0 + 0.0015 * tan(PI*c/2.0);\n    vec3 color = X * iSun * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);\n    return color;\n  } else {\n    return iSun * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);\n  }\n}\n\nvec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr) {\n  float a = dot(dir, dir);\n  float b = 2.0 * dot(dir, pos);\n  float c = dot(pos, pos) - (sr * sr);\n  float det = (b*b) - 4.0*a*c;\n  // det < 0 indicate no intersect\n  if (det < 0.0) {\n    return vec2(1e5, -1e5);\n  }\n\n  return vec2(\n    (-b - sqrt(det))/(2.0*a),\n    (-b + sqrt(det))/(2.0*a)\n  );\n}"]);
+console.log(t);
+t = glsl(["precision highp float;\n#define GLSLIFY 1\n\nattribute vec2 position;\nvarying vec2 uv;\n\nvoid main () {\n  uv = position;\n  gl_Position = vec4(position, 0.999, 1.0);\n}"]);
+console.log(t);
+var drawBunny = regl({
+    vert: "\n  precision mediump float;\n  attribute vec3 position;\n  uniform mat4 model, view, projection;\n  void main() {\n    gl_Position = projection * view * model * vec4(position, 1);\n  }",
+    frag: "\n  precision mediump float;\n  void main() {\n    gl_FragColor = vec4(0, 1, 1, 1);\n  }",
+    uniforms: {
+        model: mat4.identity([]),
+        view: regl.context('view'),
+        projection: regl.context('projection')
     },
     attributes: {
         position: bunny.positions,
     },
     elements: bunny.cells
 });
-/*const drawSky = regl({
-  frag: glsl('./gl/sky_frag.glsl'),
-  vert: glsl('./gl/sky_vert.glsl'),
-  uniforms: {
-    viewportHeight: regl.context('viewportHeight'),
-    viewportWidth: regl.context('viewportWidth'),
-    view: ({tick}) => {
-      const t = 0.01 * tick
-      return mat4.lookAt([],
-        [30 * Math.cos(t), 2.5, 30 * Math.sin(t)],
-        [0, 2.5, 0],
-        [0, 1, 0])
+var drawSky = regl({
+    frag: glsl(["#define PI 3.141592\n#define iSteps 16\n#define jSteps 8\n\nprecision highp float;\n#define GLSLIFY 1\n\nvarying vec2 uv;\n\nuniform float viewportWidth, viewportHeight;\nuniform mat4 invProjection, invView;\n\n//DEF FUNCS\nvec3 atmosphere(\n    vec3 r, \n    vec3 eyePos, \n    vec3 sunDir, \n    float iSun, \n    float rPlanet, \n    float rAtmos, \n    vec3 kRlh, \n    float kMie, \n    float shRlh, \n    float shMie, \n    float g);\nvec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr);\n\nvoid main() {\n    vec4 farRay = invView * invProjection * vec4(uv, 1, 1);\n    vec4 nearRay = invView * invProjection * vec4(uv, 0, 1);\n    vec3 position = normalize(farRay.xyz * nearRay.w - nearRay.xyz * farRay.w);\n    vec3 sunDirection = vec3(1.0,0.0,1.0);\n\n    vec3 c = sampleAtmosphere(position, sunDirection);\n\n    gl_FragColor = vec4(c, 1);\n}\n\nvec3 sampleAtmosphere (\n    vec3 ray,\n    vec3 sunDirection) {\n    return atmosphere(\n                    ray,\n                    vec3(0, 6372e3, 0),\n                    sunDirection,\n                    33.0,\n                    6371e3,\n                    6471e3,\n                    vec3(5.5e-6, 13.0e-6, 22.4e-6),\n                    // vec3( 22.0e-6, 13.0e-6, 11.4e-6), // mars\n                    21e-6,\n                    8e3,\n                    1.2e3,\n                    0.758\n                  );\n}\n\nvec3 atmosphere(\n    vec3 r, \n    vec3 eyePos, \n    vec3 sunDir, \n    float iSun, \n    float rPlanet, \n    float rAtmos, \n    vec3 kRlh, \n    float kMie, \n    float shRlh, \n    float shMie, \n    float g) {\n  sunDir = normalize(sunDir);\n  r = normalize(r);\n\n  vec2 p = ray_vs_sphere(eyePos, r, rAtmos);\n  if (p.x > p.y) {\n    return vec3(0, 0, 0);\n  }\n\n  p.y = min(p.y, ray_vs_sphere(eyePos, r, rPlanet).x);\n  float iStepSize = (p.y - p.x) / float(iSteps);\n\n  float iTime = 0.0;\n\n  vec3 totalRlh = vec3(0,0,0);\n  vec3 totalMie = vec3(0,0,0);\n\n  float iOdRlh = 0.0;\n  float iOdMie = 0.0;\n\n  // compute phase of Rayleigh and Mie\n  // c: Scattering angle\n  float c = dot(r, sunDir);\n  float gg = g*g;\n  float cc = c*c;\n  float pRlh = 3.0 / (16.0*PI) * (1.0+cc);\n  float pMie = 3.0 / (8.0*PI) * ((1.0-gg) * (cc + 1.0)) / (pow(1.0 + gg - 2.0*c*g, 1.5) * (2.0 + gg));\n\n  // samples\n  // todo: add early exit\n  for (int i = 0; i<iSteps; i++) {\n    vec3 iPos = eyePos + r * (iTime + iStepSize * 0.5);\n    float iHeight = length(iPos) - rPlanet;\n\n    float optic_rlh = exp(-iHeight / shRlh) * iStepSize;\n    float optic_mie = exp(-iHeight / shMie) * iStepSize;\n\n    // Accumulate optical depth.\n    iOdRlh += optic_rlh;\n    iOdMie += optic_mie;\n\n    float jStepSize = ray_vs_sphere(eyePos, r, rAtmos).y / float(jSteps);\n\n    float jTime = 0.0;\n\n    // Initialize optical depth accumulators for the secondary ray.\n    float jOdRlh = 0.0;\n    float jOdMie = 0.0;\n\n    for (int j = 0; j < jSteps; j++) {\n      vec3 jPos = iPos + sunDir * (jTime + jStepSize * 0.5);\n\n      float jHeight = length(jPos) - rPlanet;\n\n      jOdRlh += exp(-jHeight / shRlh) * jStepSize;\n      jOdMie += exp(-jHeight / shMie) * jStepSize;\n\n      jTime += jStepSize;\n    }\n    vec3 attn = exp(-(kMie * (iOdMie + jOdMie) + kRlh * (iOdRlh + jOdRlh)));\n\n    totalRlh += optic_rlh * attn;\n    totalMie += optic_mie * attn;\n\n    iTime += iStepSize;\n  }\n\n  if (c > 0.0) {\n    // make sun more bright than other place\n    float X = 1.0 + 0.0015 * tan(PI*c/2.0);\n    vec3 color = X * iSun * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);\n    return color;\n  } else {\n    return iSun * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);\n  }\n}\n\nvec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr) {\n  float a = dot(dir, dir);\n  float b = 2.0 * dot(dir, pos);\n  float c = dot(pos, pos) - (sr * sr);\n  float det = (b*b) - 4.0*a*c;\n  // det < 0 indicate no intersect\n  if (det < 0.0) {\n    return vec2(1e5, -1e5);\n  }\n\n  return vec2(\n    (-b - sqrt(det))/(2.0*a),\n    (-b + sqrt(det))/(2.0*a)\n  );\n}"]),
+    vert: glsl(["precision highp float;\n#define GLSLIFY 1\n\nattribute vec2 position;\nvarying vec2 uv;\n\nvoid main () {\n  uv = position;\n  gl_Position = vec4(position, 0.999, 1.0);\n}"]),
+    uniforms: {
+        viewportHeight: regl.context('viewportHeight'),
+        viewportWidth: regl.context('viewportWidth'),
+        invView: regl.context('invView'),
+        invProjection: regl.context('invProjetion')
     },
-    projection: ({viewportWidth, viewportHeight}) =>
-      mat4.perspective([],
-        Math.PI / 4,
-        viewportWidth / viewportHeight,
-        0.01,
-        1000),
-    invView: ({view}) => mat4.invert([], view),
-    invProjection: ({projection}) => mat4.invert([], projection),
-  },
-  attributes: {
-    position:
-      [
-        -4, 0,
-        4, -4,
-        4, 4,
-      ],
-  },
-  count: 3,
-  primitive: 'triangles',
-  offset: 0,
-  elements: null
-})*/ 
+    attributes: {
+        position: [
+            -4, 0,
+            4, -4,
+            4, 4,
+        ],
+    },
+    count: 3
+});
 
-},{"bunny":1,"gl-mat4":17,"regl":32}]},{},[33]);
+},{"bunny":1,"gl-mat4":17,"glslify":32,"regl":33}]},{},[34]);

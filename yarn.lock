@@ -38,6 +38,10 @@ acorn@^5.0.0, acorn@^5.4.1:
   version "5.6.2"
   resolved "https://registry.yarnpkg.com/acorn/-/acorn-5.6.2.tgz#b1da1d7be2ac1b4a327fb9eab851702c5045b4e7"
 
+angle-normals@^1.0.0:
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/angle-normals/-/angle-normals-1.0.0.tgz#958574986aa3f02946a45cd108cb2a3b8907c9ac"
+
 ansi-regex@^0.2.0, ansi-regex@^0.2.1:
   version "0.2.1"
   resolved "https://registry.yarnpkg.com/ansi-regex/-/ansi-regex-0.2.1.tgz#0d8e946967a3d8143f93e24e298525fc1b2235f9"
@@ -412,6 +416,10 @@ buffer@^5.0.2:
 builtin-status-codes@^3.0.0:
   version "3.0.0"
   resolved "https://registry.yarnpkg.com/builtin-status-codes/-/builtin-status-codes-3.0.0.tgz#85982878e21b98e1c66425e03d0174788f569ee8"
+
+bunny@^1.0.1:
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/bunny/-/bunny-1.0.1.tgz#86383da45ab7a99571a5a572b7be0e3564815f9e"
 
 cached-path-relative@^1.0.0:
   version "1.0.1"
