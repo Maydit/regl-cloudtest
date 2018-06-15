@@ -20,9 +20,7 @@ const setup = regl({
       Math.PI / 4,
       viewportWidth / viewportHeight,
       0.01,
-      1000),
-    invView: (view) => mat4.invert([], view),
-    invProjection: (projection) => mat4.invert([], projection)
+      1000)
   }
 })
 
@@ -32,7 +30,7 @@ regl.frame(() => {
   })
   setup(() => {
     drawSky()
-    drawBunny()
+    //drawBunny()
   })
 })
 
@@ -66,8 +64,8 @@ const drawSky = regl({
   uniforms: {
     viewportHeight: regl.context('viewportHeight'),
     viewportWidth: regl.context('viewportWidth'),
-    invView: regl.context('invView'),
-    invProjection: regl.context('invProjetion')
+    invView: ({view}) => mat4.invert([], view),
+    invProjection: ({projection}) => mat4.invert([], projection)
   },
   attributes: {
     position:

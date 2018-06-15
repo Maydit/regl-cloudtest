@@ -34,7 +34,7 @@ void main() {
     vec4 farRay = invView * invProjection * vec4(uv, 1, 1);
     vec4 nearRay = invView * invProjection * vec4(uv, 0, 1);
     vec3 position = normalize(farRay.xyz * nearRay.w - nearRay.xyz * farRay.w);
-    vec3 sunDirection = vec3(1.0,0.0,1.0);
+    vec3 sunDirection = vec3(1.0,45.0,1.0);
 
     vec3 c = sampleAtmosphere(position, sunDirection);
 
