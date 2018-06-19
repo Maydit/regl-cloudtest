@@ -1,7 +1,6 @@
 #define PI 3.141592
 #define iSteps 16
 #define jSteps 8
-#define CDENSCONST 10.0
 
 precision highp float;
 
@@ -47,7 +46,7 @@ vec3 sampleAtmosphere (
                     ray,
                     vec3(0, 6372e3, 0),
                     sunDirection,
-                    33.0,
+                    10.0,
                     6371e3,
                     6471e3,
                     vec3(5.5e-6, 13.0e-6, 22.4e-6),
@@ -63,27 +62,23 @@ float noise(vec3 uvw) {
     //todo: modify this
     vec3 p = floor(uvw);
     vec3 f = fract(uvw);
-    f = f*f*(3.0-2.0*f);
     vec2 uv = (p.xy + vec2(37.0,17.0)*p.z + f.xy + 0.5) / 256.;
     vec4 color = texture2D(perlin, uv, 0.0);
     return mix(color.x, color.y, f.z);
 }
 
 float currDensity(vec3 pos) {
-    if(pos.y < 2e3 || pos.y > 10e3) {
-        return 0.0; //no clouds at this height
-    }
-    float aFac = 0.7070;
-    float fFac =  2.5789;
+    pos = pos + vec3(100e3,0.0,100e3);
+    float aFac = 0.5; //arbitrary numbers, reduce amp by ~ half
+    float fFac =  2.01; //increase freq by ~ twice
     float amp = 1.0;
-    vec3 uvw = pos*0.01;
+    vec3 uvw = pos * 128.0 * 1e-6;
     float v = amp*noise(uvw); amp*=aFac; uvw*=fFac;
     v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
     v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
     v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
-    return 0.0;
-    //return clamp(2.75*v,0.0,1.0);
-    //2.75 = density factor
+    v = smoothstep(0.4,0.6,v);
+    return v*v*40.;
 }
 
 vec3 atmosphere(
@@ -129,8 +124,11 @@ vec3 atmosphere(
   for (int i = 0; i<iSteps; i++) {
     vec3 iPos = eyePos + r * (iTime + iStepSize * 0.5);
     float iHeight = length(iPos) - rPlanet;
-
-    float iDens = currDensity(iPos);
+    float iDens = 0.0;
+    if(iHeight > 50e3 && iHeight < 250e3) {
+        iDens = currDensity(iPos);
+        iDens *= sin(PI * (iHeight-50e3)/200e3); //thiccer in the middle
+    }
 
     float optic_rlh = exp(-iHeight / shRlh) * iStepSize;
     float optic_mie = (exp(-iHeight / shMie) + iDens) * iStepSize;
@@ -150,8 +148,10 @@ vec3 atmosphere(
       vec3 jPos = iPos + sunDir * (jTime + jStepSize * 0.5);
 
       float jHeight = length(jPos) - rPlanet;
-
-      float jDens = currDensity(jPos);
+      float jDens = 0.0;
+      if(jHeight>50e3 && jHeight<250e3) {
+        jDens = currDensity(jPos);
+      }
 
       jOdRlh += exp(-jHeight / shRlh) * jStepSize;
       jOdMie += (exp(-jHeight / shMie) + jDens) * jStepSize;

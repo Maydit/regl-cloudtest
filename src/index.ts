@@ -28,7 +28,7 @@ require('resl')({
   manifest: {
     perlin: {
       type: 'image',
-      src: 'src/assets/perlincloud.png',
+      src: 'src/assets/cloudnoise.png',
       parser: (data) => regl.texture({
         data: data
       })
@@ -36,14 +36,11 @@ require('resl')({
   },
   onDone: ({perlin}) => {
     console.log("frame begin");
-    console.log("version 48");
     regl.frame(() => {
       regl.clear({
         color: [0,0,0,255]
       })
-      //console.log("setup begin");
       setup(() => {
-        //console.log("sky begin")
         drawSky({perlin})
         //drawBunny()
       })
