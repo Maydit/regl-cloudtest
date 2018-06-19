@@ -61,6 +61,29 @@ vec3 sampleAtmosphere (
                   );
 }
 
+float noise(vec3 uvw) {
+    //todo: modify this
+    vec3 p = floor(uvw);
+    vec3 f = fract(uvw);
+    f = f*f*(3.0-2.0*f);
+    vec2 uv = (p.xy+vec2(37.0,17.0)*p.z + f.xy + 0.5) / 256.;
+    vec4 color = texture2D(perlin, uv, 0.0);
+    return mix(color.x, color.y, f.z);
+}
+
+float currDensity(vec3 pos) {
+    float aFac = 0.7070f;
+    float fFac =  2.5789f;
+    float amp = 1.0;
+    vec3 uvw = pos*0.01;
+    float v = amp*noise(uvw); amp*=aFac; uvw*=fFac;
+    float v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
+    float v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
+    float v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
+    return clamp(2.75f*v+0.001f,0.0,1.0); 
+    //2.75f = density factor, 0.001f = density offset
+}
+
 vec3 atmosphere(
     vec3 r, 
     vec3 eyePos, 
@@ -105,8 +128,11 @@ vec3 atmosphere(
     vec3 iPos = eyePos + r * (iTime + iStepSize * 0.5);
     float iHeight = length(iPos) - rPlanet;
 
-    float optic_rlh = exp(-iHeight / shRlh) * iStepSize;
-    float optic_mie = exp(-iHeight / shMie) * iStepSize;
+    vec3 truePos = vec3(iPos.x,iHeight,iPos.z);
+    float density = currDensity(truePos);
+
+    float optic_rlh = exp(-iHeight * density / shRlh) * iStepSize;
+    float optic_mie = exp(-iHeight * density / shMie) * iStepSize;
 
     // Accumulate optical depth.
     iOdRlh += optic_rlh;
