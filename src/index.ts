@@ -11,7 +11,7 @@ const setup = regl({
     view: ({tick}) => {
       const t = 0.01 * tick
       return mat4.lookAt([],
-        [5 * Math.cos(t), 2.5 * Math.sin(t), 2.5 * Math.sin(t)],
+        [5 * Math.cos(t), 2.3 * Math.sin(t), 2.5 * Math.sin(t)],
         [0, 0, 0],
         [0, 1, 0])
     },
@@ -23,6 +23,7 @@ const setup = regl({
       1000)
   }
 })
+console.log("imageload begin");
 require('resl')({
   manifest: {
     perlin: {
@@ -34,11 +35,14 @@ require('resl')({
     }
   },
   onDone: ({perlin}) => {
+    console.log("frame begin");
     regl.frame(() => {
       regl.clear({
         color: [0,0,0,255]
       })
+      console.log("setup begin");
       setup(() => {
+        console.log("sky begin")
         drawSky({perlin})
         //drawBunny()
       })
