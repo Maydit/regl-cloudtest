@@ -77,9 +77,9 @@ float currDensity(vec3 pos) {
     float amp = 1.0;
     vec3 uvw = pos*0.01;
     float v = amp*noise(uvw); amp*=aFac; uvw*=fFac;
-    float v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
-    float v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
-    float v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
+    v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
+    v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
+    v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
     return clamp(2.75f*v+0.001f,0.0,1.0); 
     //2.75f = density factor, 0.001f = density offset
 }
@@ -128,11 +128,11 @@ vec3 atmosphere(
     vec3 iPos = eyePos + r * (iTime + iStepSize * 0.5);
     float iHeight = length(iPos) - rPlanet;
 
-    vec3 truePos = vec3(iPos.x,iHeight,iPos.z);
-    float density = currDensity(truePos);
+    //vec3 itruePos = vec3(iPos.x,iHeight,iPos.z);
+    //float iDens = currDensity(itruePos);
 
-    float optic_rlh = exp(-iHeight * density / shRlh) * iStepSize;
-    float optic_mie = exp(-iHeight * density / shMie) * iStepSize;
+    float optic_rlh = exp(-iHeight / shRlh) * iStepSize;
+    float optic_mie = exp(-iHeight / shMie) * iStepSize;
 
     // Accumulate optical depth.
     iOdRlh += optic_rlh;
@@ -150,6 +150,9 @@ vec3 atmosphere(
       vec3 jPos = iPos + sunDir * (jTime + jStepSize * 0.5);
 
       float jHeight = length(jPos) - rPlanet;
+
+      //vec3 jtruePos = vec3(jPos.x,jHeight,jPos.z);
+      //float jDens = currDensity(jtruePos);
 
       jOdRlh += exp(-jHeight / shRlh) * jStepSize;
       jOdMie += exp(-jHeight / shMie) * jStepSize;

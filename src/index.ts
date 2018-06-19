@@ -27,7 +27,7 @@ require('resl')({
   manifest: {
     perlin: {
       type: 'image',
-      src: 'assets/perlincloud.png',
+      src: 'src/assets/perlincloud.png',
       parser: (data) => regl.texture({
         data: data
       })
