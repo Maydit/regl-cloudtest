@@ -5,8 +5,9 @@
   "main": "src/index.js",
   "scripts": {
     "test": "test",
+    "clean": "rm bundle.js",
     "build" : "watchify -t [ glslify --transform glslify-import ] ./src/index.ts -p [ tsify ] -o bundle.js",
-    "start": "browserify -t [ glslify --transform glslify-import ] ./src/index.ts -p [ tsify ] -o bundle.js && http-server ."
+    "start": "browserify -t [ glslify --transform glslify-import ] ./src/index.ts -p [ tsify ] -o bundle.js && http-server . -c-1 -a localhost -p 8000."
   },
   "repository": {
     "type": "git",

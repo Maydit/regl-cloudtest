@@ -12,7 +12,7 @@ const setup = regl({
       const t = 0.01 * tick
       return mat4.lookAt([],
         [0, 0, 0],
-        [-Math.sin(t*0.01), 0.6*Math.sin(t*0.1) + 0.4, -Math.cos(t*0.01)],
+        [-Math.sin(t*0.76), 0.6*Math.sin(t*0.51) + 0.4, -Math.cos(t*0.76)],
         [0, 1, 0])
     },
     projection: ({viewportWidth, viewportHeight}) =>
@@ -36,7 +36,7 @@ require('resl')({
   },
   onDone: ({perlin}) => {
     console.log("frame begin");
-    console.log("version 43");
+    console.log("version 48");
     regl.frame(() => {
       regl.clear({
         color: [0,0,0,255]

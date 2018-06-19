@@ -1832,7 +1832,7 @@ var setup = regl({
         view: function (_a) {
             var tick = _a.tick;
             var t = 0.01 * tick;
-            return mat4.lookAt([], [0, 0, 0], [-Math.sin(t * 0.01), 0.6 * Math.sin(t * 0.1) + 0.4, -Math.cos(t * 0.01)], [0, 1, 0]);
+            return mat4.lookAt([], [0, 0, 0], [-Math.sin(t), 0.6 * Math.sin(t * 0.5) + 0.4, -Math.cos(t)], [0, 1, 0]);
         },
         projection: function (_a) {
             var viewportWidth = _a.viewportWidth, viewportHeight = _a.viewportHeight;
@@ -1854,7 +1854,7 @@ require('resl')({
     onDone: function (_a) {
         var perlin = _a.perlin;
         console.log("frame begin");
-        console.log("version 43");
+        console.log("version 47");
         regl.frame(function () {
             regl.clear({
                 color: [0, 0, 0, 255]
