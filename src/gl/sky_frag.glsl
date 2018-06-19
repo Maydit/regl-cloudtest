@@ -6,6 +6,7 @@ precision highp float;
 
 varying vec2 uv;
 
+uniform sampler2D perlin;
 uniform float viewportWidth, viewportHeight;
 uniform mat4 invProjection, invView;
 
@@ -34,7 +35,7 @@ void main() {
     vec4 farRay = invView * invProjection * vec4(uv, 1, 1);
     vec4 nearRay = invView * invProjection * vec4(uv, 0, 1);
     vec3 position = normalize(farRay.xyz * nearRay.w - nearRay.xyz * farRay.w);
-    vec3 sunDirection = vec3(1.0,45.0,1.0);
+    vec3 sunDirection = vec3(0.707, 0.707, 1.0);
 
     vec3 c = sampleAtmosphere(position, sunDirection);
 
@@ -100,7 +101,6 @@ vec3 atmosphere(
   float pMie = 3.0 / (8.0*PI) * ((1.0-gg) * (cc + 1.0)) / (pow(1.0 + gg - 2.0*c*g, 1.5) * (2.0 + gg));
 
   // samples
-  // todo: add early exit
   for (int i = 0; i<iSteps; i++) {
     vec3 iPos = eyePos + r * (iTime + iStepSize * 0.5);
     float iHeight = length(iPos) - rPlanet;

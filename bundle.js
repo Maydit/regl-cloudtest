@@ -1391,6 +1391,434 @@ case "lost":c=U;break;case "restore":c=Y;break;case "destroy":c=W}c.push(b);retu
 _gl:l,_refresh:m,poll:function(){u();x&&x.update()},now:v,stats:t});a.onDone(null,g);return g}});
 
 },{}],34:[function(require,module,exports){
+/* global XMLHttpRequest */
+var configParameters = [
+  'manifest',
+  'onDone',
+  'onProgress',
+  'onError'
+]
+
+var manifestParameters = [
+  'type',
+  'src',
+  'stream',
+  'credentials',
+  'parser'
+]
+
+var parserParameters = [
+  'onData',
+  'onDone'
+]
+
+var STATE_ERROR = -1
+var STATE_DATA = 0
+var STATE_COMPLETE = 1
+
+function raise (message) {
+  throw new Error('resl: ' + message)
+}
+
+function checkType (object, parameters, name) {
+  Object.keys(object).forEach(function (param) {
+    if (parameters.indexOf(param) < 0) {
+      raise('invalid parameter "' + param + '" in ' + name)
+    }
+  })
+}
+
+function Loader (name, cancel) {
+  this.state = STATE_DATA
+  this.ready = false
+  this.progress = 0
+  this.name = name
+  this.cancel = cancel
+}
+
+module.exports = function resl (config) {
+  if (typeof config !== 'object' || !config) {
+    raise('invalid or missing configuration')
+  }
+
+  checkType(config, configParameters, 'config')
+
+  var manifest = config.manifest
+  if (typeof manifest !== 'object' || !manifest) {
+    raise('missing manifest')
+  }
+
+  function getFunction (name, dflt) {
+    if (name in config) {
+      var func = config[name]
+      if (typeof func !== 'function') {
+        raise('invalid callback "' + name + '"')
+      }
+      return func
+    }
+    return null
+  }
+
+  var onDone = getFunction('onDone')
+  if (!onDone) {
+    raise('missing onDone() callback')
+  }
+
+  var onProgress = getFunction('onProgress')
+  var onError = getFunction('onError')
+
+  var assets = {}
+
+  var state = STATE_DATA
+
+  function loadXHR (request) {
+    var name = request.name
+    var stream = request.stream
+    var binary = request.type === 'binary'
+    var parser = request.parser
+
+    var xhr = new XMLHttpRequest()
+    var asset = null
+
+    var loader = new Loader(name, cancel)
+
+    if (stream) {
+      xhr.onreadystatechange = onReadyStateChange
+    } else {
+      xhr.onreadystatechange = function () {
+        if (xhr.readyState === 4) {
+          onReadyStateChange()
+        }
+      }
+    }
+
+    if (binary) {
+      xhr.responseType = 'arraybuffer'
+    }
+
+    function onReadyStateChange () {
+      if (xhr.readyState < 2 ||
+          loader.state === STATE_COMPLETE ||
+          loader.state === STATE_ERROR) {
+        return
+      }
+      if (xhr.status !== 200) {
+        return abort('error loading resource "' + request.name + '"')
+      }
+      if (xhr.readyState > 2 && loader.state === STATE_DATA) {
+        var response
+        if (request.type === 'binary') {
+          response = xhr.response
+        } else {
+          response = xhr.responseText
+        }
+        if (parser.data) {
+          try {
+            asset = parser.data(response)
+          } catch (e) {
+            return abort(e)
+          }
+        } else {
+          asset = response
+        }
+      }
+      if (xhr.readyState > 3 && loader.state === STATE_DATA) {
+        if (parser.done) {
+          try {
+            asset = parser.done()
+          } catch (e) {
+            return abort(e)
+          }
+        }
+        loader.state = STATE_COMPLETE
+      }
+      assets[name] = asset
+      loader.progress = 0.75 * loader.progress + 0.25
+      loader.ready =
+        (request.stream && !!asset) ||
+        loader.state === STATE_COMPLETE
+      notifyProgress()
+    }
+
+    function cancel () {
+      if (loader.state === STATE_COMPLETE || loader.state === STATE_ERROR) {
+        return
+      }
+      xhr.onreadystatechange = null
+      xhr.abort()
+      loader.state = STATE_ERROR
+    }
+
+    // set up request
+    if (request.credentials) {
+      xhr.withCredentials = true
+    }
+    xhr.open('GET', request.src, true)
+    xhr.send()
+
+    return loader
+  }
+
+  function loadElement (request, element) {
+    var name = request.name
+    var parser = request.parser
+
+    var loader = new Loader(name, cancel)
+    var asset = element
+
+    function handleProgress () {
+      if (loader.state === STATE_DATA) {
+        if (parser.data) {
+          try {
+            asset = parser.data(element)
+          } catch (e) {
+            return abort(e)
+          }
+        } else {
+          asset = element
+        }
+      }
+    }
+
+    function onProgress (e) {
+      handleProgress()
+      assets[name] = asset
+      if (e.lengthComputable) {
+        loader.progress = Math.max(loader.progress, e.loaded / e.total)
+      } else {
+        loader.progress = 0.75 * loader.progress + 0.25
+      }
+      notifyProgress(name)
+    }
+
+    function onComplete () {
+      handleProgress()
+      if (loader.state === STATE_DATA) {
+        if (parser.done) {
+          try {
+            asset = parser.done()
+          } catch (e) {
+            return abort(e)
+          }
+        }
+        loader.state = STATE_COMPLETE
+      }
+      loader.progress = 1
+      loader.ready = true
+      assets[name] = asset
+      removeListeners()
+      notifyProgress('finish ' + name)
+    }
+
+    function onError () {
+      abort('error loading asset "' + name + '"')
+    }
+
+    if (request.stream) {
+      element.addEventListener('progress', onProgress)
+    }
+    if (request.type === 'image') {
+      element.addEventListener('load', onComplete)
+    } else {
+      var canPlay = false
+      var loadedMetaData = false
+      element.addEventListener('loadedmetadata', function () {
+        loadedMetaData = true
+        if (canPlay) {
+          onComplete()
+        }
+      })
+      element.addEventListener('canplay', function () {
+        canPlay = true
+        if (loadedMetaData) {
+          onComplete()
+        }
+      })
+    }
+    element.addEventListener('error', onError)
+
+    function removeListeners () {
+      if (request.stream) {
+        element.removeEventListener('progress', onProgress)
+      }
+      if (request.type === 'image') {
+        element.addEventListener('load', onComplete)
+      } else {
+        element.addEventListener('canplay', onComplete)
+      }
+      element.removeEventListener('error', onError)
+    }
+
+    function cancel () {
+      if (loader.state === STATE_COMPLETE || loader.state === STATE_ERROR) {
+        return
+      }
+      loader.state = STATE_ERROR
+      removeListeners()
+      element.src = ''
+    }
+
+    // set up request
+    if (request.credentials) {
+      element.crossOrigin = 'use-credentials'
+    } else {
+      element.crossOrigin = 'anonymous'
+    }
+    element.src = request.src
+
+    return loader
+  }
+
+  var loaders = {
+    text: loadXHR,
+    binary: function (request) {
+      // TODO use fetch API for streaming if supported
+      return loadXHR(request)
+    },
+    image: function (request) {
+      return loadElement(request, document.createElement('img'))
+    },
+    video: function (request) {
+      return loadElement(request, document.createElement('video'))
+    },
+    audio: function (request) {
+      return loadElement(request, document.createElement('audio'))
+    }
+  }
+
+  // First we parse all objects in order to verify that all type information
+  // is correct
+  var pending = Object.keys(manifest).map(function (name) {
+    var request = manifest[name]
+    if (typeof request === 'string') {
+      request = {
+        src: request
+      }
+    } else if (typeof request !== 'object' || !request) {
+      raise('invalid asset definition "' + name + '"')
+    }
+
+    checkType(request, manifestParameters, 'asset "' + name + '"')
+
+    function getParameter (prop, accepted, init) {
+      var value = init
+      if (prop in request) {
+        value = request[prop]
+      }
+      if (accepted.indexOf(value) < 0) {
+        raise('invalid ' + prop + ' "' + value + '" for asset "' + name + '", possible values: ' + accepted)
+      }
+      return value
+    }
+
+    function getString (prop, required, init) {
+      var value = init
+      if (prop in request) {
+        value = request[prop]
+      } else if (required) {
+        raise('missing ' + prop + ' for asset "' + name + '"')
+      }
+      if (typeof value !== 'string') {
+        raise('invalid ' + prop + ' for asset "' + name + '", must be a string')
+      }
+      return value
+    }
+
+    function getParseFunc (name, dflt) {
+      if (name in request.parser) {
+        var result = request.parser[name]
+        if (typeof result !== 'function') {
+          raise('invalid parser callback ' + name + ' for asset "' + name + '"')
+        }
+        return result
+      } else {
+        return dflt
+      }
+    }
+
+    var parser = {}
+    if ('parser' in request) {
+      if (typeof request.parser === 'function') {
+        parser = {
+          data: request.parser
+        }
+      } else if (typeof request.parser === 'object' && request.parser) {
+        checkType(parser, parserParameters, 'parser for asset "' + name + '"')
+        if (!('onData' in parser)) {
+          raise('missing onData callback for parser in asset "' + name + '"')
+        }
+        parser = {
+          data: getParseFunc('onData'),
+          done: getParseFunc('onDone')
+        }
+      } else {
+        raise('invalid parser for asset "' + name + '"')
+      }
+    }
+
+    return {
+      name: name,
+      type: getParameter('type', Object.keys(loaders), 'text'),
+      stream: !!request.stream,
+      credentials: !!request.credentials,
+      src: getString('src', true, ''),
+      parser: parser
+    }
+  }).map(function (request) {
+    return (loaders[request.type])(request)
+  })
+
+  function abort (message) {
+    if (state === STATE_ERROR || state === STATE_COMPLETE) {
+      return
+    }
+    state = STATE_ERROR
+    pending.forEach(function (loader) {
+      loader.cancel()
+    })
+    if (onError) {
+      if (typeof message === 'string') {
+        onError(new Error('resl: ' + message))
+      } else {
+        onError(message)
+      }
+    } else {
+      console.error('resl error:', message)
+    }
+  }
+
+  function notifyProgress (message) {
+    if (state === STATE_ERROR || state === STATE_COMPLETE) {
+      return
+    }
+
+    var progress = 0
+    var numReady = 0
+    pending.forEach(function (loader) {
+      if (loader.ready) {
+        numReady += 1
+      }
+      progress += loader.progress
+    })
+
+    if (numReady === pending.length) {
+      state = STATE_COMPLETE
+      onDone(assets)
+    } else {
+      if (onProgress) {
+        onProgress(progress / pending.length, message)
+      }
+    }
+  }
+
+  if (pending.length === 0) {
+    setTimeout(function () {
+      notifyProgress('done')
+    }, 1)
+  }
+}
+
+},{}],35:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 var glsl = require("glslify");
@@ -1404,7 +1832,7 @@ var setup = regl({
         view: function (_a) {
             var tick = _a.tick;
             var t = 0.01 * tick;
-            return mat4.lookAt([], [30 * Math.cos(t), 2.5, 30 * Math.sin(t)], [0, 2.5, 0], [0, 1, 0]);
+            return mat4.lookAt([], [5 * Math.cos(t), 2.5 * Math.sin(t), 2.5 * Math.sin(t)], [0, 0, 0], [0, 1, 0]);
         },
         projection: function (_a) {
             var viewportWidth = _a.viewportWidth, viewportHeight = _a.viewportHeight;
@@ -1412,14 +1840,28 @@ var setup = regl({
         }
     }
 });
-regl.frame(function () {
-    regl.clear({
-        color: [0, 0, 0, 1]
-    });
-    setup(function () {
-        drawSky();
-        //drawBunny()
-    });
+require('resl')({
+    manifest: {
+        perlin: {
+            type: 'image',
+            src: 'assets/perlincloud.png',
+            parser: function (data) { return regl.texture({
+                data: data
+            }); }
+        }
+    },
+    onDone: function (_a) {
+        var perlin = _a.perlin;
+        regl.frame(function () {
+            regl.clear({
+                color: [0, 0, 0, 255]
+            });
+            setup(function () {
+                drawSky({ perlin: perlin });
+                //drawBunny()
+            });
+        });
+    }
 });
 var drawBunny = regl({
     vert: "\n  precision mediump float;\n  attribute vec3 position;\n  uniform mat4 model, view, projection;\n  void main() {\n    gl_Position = projection * view * model * vec4(position, 1);\n  }",
@@ -1435,9 +1877,10 @@ var drawBunny = regl({
     elements: bunny.cells
 });
 var drawSky = regl({
-    frag: glsl(["#define PI 3.141592\n#define iSteps 16\n#define jSteps 8\n\nprecision highp float;\n#define GLSLIFY 1\n\nvarying vec2 uv;\n\nuniform float viewportWidth, viewportHeight;\nuniform mat4 invProjection, invView;\n\n//DEF FUNCS\nvec3 atmosphere(\n    vec3 r, \n    vec3 eyePos, \n    vec3 sunDir, \n    float iSun, \n    float rPlanet, \n    float rAtmos, \n    vec3 kRlh, \n    float kMie, \n    float shRlh, \n    float shMie, \n    float g);\nvec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr);\nvec3 sampleAtmosphere (\n    vec3 ray,\n    vec3 sunDirection);\n\nvoid main() {\n    vec4 farRay = invView * invProjection * vec4(uv, 1, 1);\n    vec4 nearRay = invView * invProjection * vec4(uv, 0, 1);\n    vec3 position = normalize(farRay.xyz * nearRay.w - nearRay.xyz * farRay.w);\n    vec3 sunDirection = vec3(0.0,0.707,1.0);\n\n    vec3 c = sampleAtmosphere(position, sunDirection);\n\n    gl_FragColor = vec4(c, 1);\n}\n\nvec3 sampleAtmosphere (\n    vec3 ray,\n    vec3 sunDirection) {\n    return atmosphere(\n                    ray,\n                    vec3(0, 6372e3, 0),\n                    sunDirection,\n                    33.0,\n                    6371e3,\n                    6471e3,\n                    vec3(5.5e-6, 13.0e-6, 22.4e-6),\n                    // vec3( 22.0e-6, 13.0e-6, 11.4e-6), // mars\n                    21e-6,\n                    8e3,\n                    1.2e3,\n                    0.758\n                  );\n}\n\nvec3 atmosphere(\n    vec3 r, \n    vec3 eyePos, \n    vec3 sunDir, \n    float iSun, \n    float rPlanet, \n    float rAtmos, \n    vec3 kRlh, \n    float kMie, \n    float shRlh, \n    float shMie, \n    float g) {\n  sunDir = normalize(sunDir);\n  r = normalize(r);\n\n  vec2 p = ray_vs_sphere(eyePos, r, rAtmos);\n  if (p.x > p.y) {\n    return vec3(0, 0, 0);\n  }\n\n  p.y = min(p.y, ray_vs_sphere(eyePos, r, rPlanet).x);\n  float iStepSize = (p.y - p.x) / float(iSteps);\n\n  float iTime = 0.0;\n\n  vec3 totalRlh = vec3(0,0,0);\n  vec3 totalMie = vec3(0,0,0);\n\n  float iOdRlh = 0.0;\n  float iOdMie = 0.0;\n\n  // compute phase of Rayleigh and Mie\n  // c: Scattering angle\n  float c = dot(r, sunDir);\n  float gg = g*g;\n  float cc = c*c;\n  float pRlh = 3.0 / (16.0*PI) * (1.0+cc);\n  float pMie = 3.0 / (8.0*PI) * ((1.0-gg) * (cc + 1.0)) / (pow(1.0 + gg - 2.0*c*g, 1.5) * (2.0 + gg));\n\n  // samples\n  // todo: add early exit\n  for (int i = 0; i<iSteps; i++) {\n    vec3 iPos = eyePos + r * (iTime + iStepSize * 0.5);\n    float iHeight = length(iPos) - rPlanet;\n\n    float optic_rlh = exp(-iHeight / shRlh) * iStepSize;\n    float optic_mie = exp(-iHeight / shMie) * iStepSize;\n\n    // Accumulate optical depth.\n    iOdRlh += optic_rlh;\n    iOdMie += optic_mie;\n\n    float jStepSize = ray_vs_sphere(eyePos, r, rAtmos).y / float(jSteps);\n\n    float jTime = 0.0;\n\n    // Initialize optical depth accumulators for the secondary ray.\n    float jOdRlh = 0.0;\n    float jOdMie = 0.0;\n\n    for (int j = 0; j < jSteps; j++) {\n      vec3 jPos = iPos + sunDir * (jTime + jStepSize * 0.5);\n\n      float jHeight = length(jPos) - rPlanet;\n\n      jOdRlh += exp(-jHeight / shRlh) * jStepSize;\n      jOdMie += exp(-jHeight / shMie) * jStepSize;\n\n      jTime += jStepSize;\n    }\n    vec3 attn = exp(-(kMie * (iOdMie + jOdMie) + kRlh * (iOdRlh + jOdRlh)));\n\n    totalRlh += optic_rlh * attn;\n    totalMie += optic_mie * attn;\n\n    iTime += iStepSize;\n  }\n\n  if (c > 0.0) {\n    // make sun more bright than other place\n    float X = 1.0 + 0.0015 * tan(PI*c/2.0);\n    vec3 color = X * iSun * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);\n    return color;\n  } else {\n    return iSun * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);\n  }\n}\n\nvec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr) {\n  float a = dot(dir, dir);\n  float b = 2.0 * dot(dir, pos);\n  float c = dot(pos, pos) - (sr * sr);\n  float det = (b*b) - 4.0*a*c;\n  // det < 0 indicate no intersect\n  if (det < 0.0) {\n    return vec2(1e5, -1e5);\n  }\n\n  return vec2(\n    (-b - sqrt(det))/(2.0*a),\n    (-b + sqrt(det))/(2.0*a)\n  );\n}"]),
+    frag: glsl(["#define PI 3.141592\n#define iSteps 16\n#define jSteps 8\n\nprecision highp float;\n#define GLSLIFY 1\n\nvarying vec2 uv;\n\nuniform sampler2D perlin;\nuniform float viewportWidth, viewportHeight;\nuniform mat4 invProjection, invView;\n\n//DEF FUNCS\nvec3 atmosphere(\n    vec3 r, \n    vec3 eyePos, \n    vec3 sunDir, \n    float iSun, \n    float rPlanet, \n    float rAtmos, \n    vec3 kRlh, \n    float kMie, \n    float shRlh, \n    float shMie, \n    float g);\nvec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr);\nvec3 sampleAtmosphere (\n    vec3 ray,\n    vec3 sunDirection);\n\nvoid main() {\n    vec4 farRay = invView * invProjection * vec4(uv, 1, 1);\n    vec4 nearRay = invView * invProjection * vec4(uv, 0, 1);\n    vec3 position = normalize(farRay.xyz * nearRay.w - nearRay.xyz * farRay.w);\n    vec3 sunDirection = vec3(0.707, 0.707, 1.0);\n\n    vec3 c = sampleAtmosphere(position, sunDirection);\n\n    gl_FragColor = vec4(c, 1);\n}\n\nvec3 sampleAtmosphere (\n    vec3 ray,\n    vec3 sunDirection) {\n    return atmosphere(\n                    ray,\n                    vec3(0, 6372e3, 0),\n                    sunDirection,\n                    33.0,\n                    6371e3,\n                    6471e3,\n                    vec3(5.5e-6, 13.0e-6, 22.4e-6),\n                    // vec3( 22.0e-6, 13.0e-6, 11.4e-6), // mars\n                    21e-6,\n                    8e3,\n                    1.2e3,\n                    0.758\n                  );\n}\n\nvec3 atmosphere(\n    vec3 r, \n    vec3 eyePos, \n    vec3 sunDir, \n    float iSun, \n    float rPlanet, \n    float rAtmos, \n    vec3 kRlh, \n    float kMie, \n    float shRlh, \n    float shMie, \n    float g) {\n  sunDir = normalize(sunDir);\n  r = normalize(r);\n\n  vec2 p = ray_vs_sphere(eyePos, r, rAtmos);\n  if (p.x > p.y) {\n    return vec3(0, 0, 0);\n  }\n\n  p.y = min(p.y, ray_vs_sphere(eyePos, r, rPlanet).x);\n  float iStepSize = (p.y - p.x) / float(iSteps);\n\n  float iTime = 0.0;\n\n  vec3 totalRlh = vec3(0,0,0);\n  vec3 totalMie = vec3(0,0,0);\n\n  float iOdRlh = 0.0;\n  float iOdMie = 0.0;\n\n  // compute phase of Rayleigh and Mie\n  // c: Scattering angle\n  float c = dot(r, sunDir);\n  float gg = g*g;\n  float cc = c*c;\n  float pRlh = 3.0 / (16.0*PI) * (1.0+cc);\n  float pMie = 3.0 / (8.0*PI) * ((1.0-gg) * (cc + 1.0)) / (pow(1.0 + gg - 2.0*c*g, 1.5) * (2.0 + gg));\n\n  // samples\n  for (int i = 0; i<iSteps; i++) {\n    vec3 iPos = eyePos + r * (iTime + iStepSize * 0.5);\n    float iHeight = length(iPos) - rPlanet;\n\n    float optic_rlh = exp(-iHeight / shRlh) * iStepSize;\n    float optic_mie = exp(-iHeight / shMie) * iStepSize;\n\n    // Accumulate optical depth.\n    iOdRlh += optic_rlh;\n    iOdMie += optic_mie;\n\n    float jStepSize = ray_vs_sphere(eyePos, r, rAtmos).y / float(jSteps);\n\n    float jTime = 0.0;\n\n    // Initialize optical depth accumulators for the secondary ray.\n    float jOdRlh = 0.0;\n    float jOdMie = 0.0;\n\n    for (int j = 0; j < jSteps; j++) {\n      vec3 jPos = iPos + sunDir * (jTime + jStepSize * 0.5);\n\n      float jHeight = length(jPos) - rPlanet;\n\n      jOdRlh += exp(-jHeight / shRlh) * jStepSize;\n      jOdMie += exp(-jHeight / shMie) * jStepSize;\n\n      jTime += jStepSize;\n    }\n    vec3 attn = exp(-(kMie * (iOdMie + jOdMie) + kRlh * (iOdRlh + jOdRlh)));\n\n    totalRlh += optic_rlh * attn;\n    totalMie += optic_mie * attn;\n\n    iTime += iStepSize;\n  }\n\n  if (c > 0.0) {\n    // make sun more bright than other place\n    float X = 1.0 + 0.0015 * tan(PI*c/2.0);\n    vec3 color = X * iSun * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);\n    return color;\n  } else {\n    return iSun * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);\n  }\n}\n\nvec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr) {\n  float a = dot(dir, dir);\n  float b = 2.0 * dot(dir, pos);\n  float c = dot(pos, pos) - (sr * sr);\n  float det = (b*b) - 4.0*a*c;\n  // det < 0 indicate no intersect\n  if (det < 0.0) {\n    return vec2(1e5, -1e5);\n  }\n\n  return vec2(\n    (-b - sqrt(det))/(2.0*a),\n    (-b + sqrt(det))/(2.0*a)\n  );\n}"]),
     vert: glsl(["precision highp float;\n#define GLSLIFY 1\n\nattribute vec2 position;\nvarying vec2 uv;\n\nvoid main () {\n  uv = position;\n  gl_Position = vec4(position, 0.999, 1.0);\n}"]),
     uniforms: {
+        perlin: regl.prop('perlin'),
         viewportHeight: regl.context('viewportHeight'),
         viewportWidth: regl.context('viewportWidth'),
         invView: function (_a) {
@@ -1459,4 +1902,4 @@ var drawSky = regl({
     count: 3
 });
 
-},{"bunny":1,"gl-mat4":17,"glslify":32,"regl":33}]},{},[34]);
+},{"bunny":1,"gl-mat4":17,"glslify":32,"regl":33,"resl":34}]},{},[35]);

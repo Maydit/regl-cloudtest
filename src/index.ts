@@ -11,8 +11,8 @@ const setup = regl({
     view: ({tick}) => {
       const t = 0.01 * tick
       return mat4.lookAt([],
-        [30 * Math.cos(t), 2.5, 30 * Math.sin(t)],
-        [0, 2.5, 0],
+        [5 * Math.cos(t), 2.5 * Math.sin(t), 2.5 * Math.sin(t)],
+        [0, 0, 0],
         [0, 1, 0])
     },
     projection: ({viewportWidth, viewportHeight}) =>
@@ -23,15 +23,27 @@ const setup = regl({
       1000)
   }
 })
-
-regl.frame(() => {
-  regl.clear({
-    color: [0,0,0,1]
-  })
-  setup(() => {
-    drawSky()
-    //drawBunny()
-  })
+require('resl')({
+  manifest: {
+    perlin: {
+      type: 'image',
+      src: 'assets/perlincloud.png',
+      parser: (data) => regl.texture({
+        data: data
+      })
+    }
+  },
+  onDone: ({perlin}) => {
+    regl.frame(() => {
+      regl.clear({
+        color: [0,0,0,255]
+      })
+      setup(() => {
+        drawSky({perlin})
+        //drawBunny()
+      })
+    })
+  }
 })
 
 const drawBunny = regl({
@@ -62,6 +74,7 @@ const drawSky = regl({
   frag: glsl('./gl/sky_frag.glsl'),
   vert: glsl('./gl/sky_vert.glsl'),
   uniforms: {
+    perlin: regl.prop('perlin'),
     viewportHeight: regl.context('viewportHeight'),
     viewportWidth: regl.context('viewportWidth'),
     invView: ({view}) => mat4.invert([], view),
