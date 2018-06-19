@@ -11,8 +11,8 @@ const setup = regl({
     view: ({tick}) => {
       const t = 0.01 * tick
       return mat4.lookAt([],
-        [5 * Math.cos(t), 2.3 * Math.sin(t), 2.5 * Math.sin(t)],
         [0, 0, 0],
+        [-Math.sin(t*0.01), 0.6*Math.sin(t*0.1) + 0.4, -Math.cos(t*0.01)],
         [0, 1, 0])
     },
     projection: ({viewportWidth, viewportHeight}) =>
@@ -36,13 +36,14 @@ require('resl')({
   },
   onDone: ({perlin}) => {
     console.log("frame begin");
+    console.log("version 43");
     regl.frame(() => {
       regl.clear({
         color: [0,0,0,255]
       })
-      console.log("setup begin");
+      //console.log("setup begin");
       setup(() => {
-        console.log("sky begin")
+        //console.log("sky begin")
         drawSky({perlin})
         //drawBunny()
       })

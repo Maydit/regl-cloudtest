@@ -1,6 +1,7 @@
 #define PI 3.141592
 #define iSteps 16
 #define jSteps 8
+#define CDENSCONST 10.0
 
 precision highp float;
 
@@ -27,9 +28,6 @@ vec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr);
 vec3 sampleAtmosphere (
     vec3 ray,
     vec3 sunDirection);
-
-
-
 
 void main() {
     vec4 farRay = invView * invProjection * vec4(uv, 1, 1);
@@ -66,22 +64,26 @@ float noise(vec3 uvw) {
     vec3 p = floor(uvw);
     vec3 f = fract(uvw);
     f = f*f*(3.0-2.0*f);
-    vec2 uv = (p.xy+vec2(37.0,17.0)*p.z + f.xy + 0.5) / 256.;
+    vec2 uv = (p.xy + vec2(37.0,17.0)*p.z + f.xy + 0.5) / 256.;
     vec4 color = texture2D(perlin, uv, 0.0);
     return mix(color.x, color.y, f.z);
 }
 
 float currDensity(vec3 pos) {
-    float aFac = 0.7070f;
-    float fFac =  2.5789f;
+    if(pos.y < 2e3 || pos.y > 10e3) {
+        return 0.0; //no clouds at this height
+    }
+    float aFac = 0.7070;
+    float fFac =  2.5789;
     float amp = 1.0;
     vec3 uvw = pos*0.01;
     float v = amp*noise(uvw); amp*=aFac; uvw*=fFac;
     v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
     v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
     v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
-    return clamp(2.75f*v+0.001f,0.0,1.0); 
-    //2.75f = density factor, 0.001f = density offset
+    return 0.0;
+    //return clamp(2.75*v,0.0,1.0);
+    //2.75 = density factor
 }
 
 vec3 atmosphere(
@@ -128,12 +130,10 @@ vec3 atmosphere(
     vec3 iPos = eyePos + r * (iTime + iStepSize * 0.5);
     float iHeight = length(iPos) - rPlanet;
 
-    //vec3 itruePos = vec3(iPos.x,iHeight,iPos.z);
-    //float iDens = currDensity(itruePos);
+    float iDens = currDensity(iPos);
 
     float optic_rlh = exp(-iHeight / shRlh) * iStepSize;
-    float optic_mie = exp(-iHeight / shMie) * iStepSize;
-
+    float optic_mie = (exp(-iHeight / shMie) + iDens) * iStepSize;
     // Accumulate optical depth.
     iOdRlh += optic_rlh;
     iOdMie += optic_mie;
@@ -151,11 +151,10 @@ vec3 atmosphere(
 
       float jHeight = length(jPos) - rPlanet;
 
-      //vec3 jtruePos = vec3(jPos.x,jHeight,jPos.z);
-      //float jDens = currDensity(jtruePos);
+      float jDens = currDensity(jPos);
 
       jOdRlh += exp(-jHeight / shRlh) * jStepSize;
-      jOdMie += exp(-jHeight / shMie) * jStepSize;
+      jOdMie += (exp(-jHeight / shMie) + jDens) * jStepSize;
 
       jTime += jStepSize;
     }

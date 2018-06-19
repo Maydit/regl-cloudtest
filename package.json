@@ -1,11 +1,12 @@
 {
   "name": "regl-cloudtest",
   "version": "1.0.0",
-  "description": "Raymarching using clouds",
+  "description": "Clouds using raymarching",
   "main": "src/index.js",
   "scripts": {
     "test": "test",
-    "start": "browserify -t [ glslify --transform glslify-import ] ./src/index.ts -p [ tsify ] > bundle.js && http-server ."
+    "build" : "watchify -t [ glslify --transform glslify-import ] ./src/index.ts -p [ tsify ] -o bundle.js",
+    "start": "browserify -t [ glslify --transform glslify-import ] ./src/index.ts -p [ tsify ] -o bundle.js && http-server ."
   },
   "repository": {
     "type": "git",
