@@ -73,7 +73,7 @@ const drawBunny = regl({
 })
 
 const drawSky = regl({
-  frag: glsl('./gl/sky_frag.glsl'),
+  frag: glsl('./gl/sky_frag2.glsl'),
   vert: glsl('./gl/sky_vert.glsl'),
   uniforms: {
     perlin: regl.prop('perlin'),

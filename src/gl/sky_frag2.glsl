@@ -1,6 +1,6 @@
 #define PI 3.141592
-#define iSteps 8
-#define cSteps 24
+#define iSteps 16
+#define cSteps 32
 #define jSteps 8
 
 precision highp float;
@@ -12,9 +12,10 @@ uniform float viewportWidth, viewportHeight;
 uniform mat4 invProjection, invView;
 
 
+vec3 sampleAtmosphere(vec3 position, vec3 sunDirection);
 vec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr);
-float getDensity(vec3 pos);
-float getLight(vec3 pos);
+float testDensity(vec3 pos);
+float getLight(vec3 pos, vec3 sunDir);
 
 
 void main() {
@@ -29,9 +30,9 @@ void main() {
 }
 
 vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
-    //const float sunIntensity = 33.0;
+    const float sunIntensity = 33.0;
     //heights
-    const vec3 eyePos = vec3(0, 6371.1e3, 0);
+    const vec3 eyePos = vec3(0, 6371.01e3, 0);
     const float atmosphereStart = 6371e3;
     const float cloudStart = 6373e3;
     const float cloudEnd = 6377e3;
@@ -44,14 +45,14 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
     const float shMie = 1.2e3;
     const float g = 0.758;
     //
-    sunDir = normalize(sunDirection);
-    r = normalize(position);
+    vec3 sunDir = normalize(sunDirection);
+    vec3 r = normalize(position);
 
-    vec2 p = ray_vs_sphere(eyePos, r, cloudStart);
+    vec2 p = ray_vs_sphere(eyePos, r, atmosphereEnd);
     if (p.x > p.y) {
         return vec3(0, 0, 0);
     }
-    p.y = min(p.y, ray_vs_sphere(eyePos, r, rPlanet).x);
+    p.y = min(p.y, ray_vs_sphere(eyePos, r, atmosphereStart).x);
 
     float c = dot(r, sunDir);
     float gg = g*g;
@@ -68,23 +69,23 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
 
     float iOdRlh = 0.0;
     float iOdMie = 0.0; 
-    //4 samples before clouds
+    //16 samples before clouds
     vec3 intermediatePos = eyePos;
-    for (int i = 0; i<(iSteps/2); i++) {
+    for (int i = 0; i<iSteps; i++) {
         vec3 iPos = intermediatePos + r * (iTime + iStepSize * 0.5);
-        float iHeight = length(iPos) - rPlanet;
+        float iHeight = length(iPos) - atmosphereStart;
         float optic_rlh = exp(-iHeight / shRlh) * iStepSize;
         float optic_mie = exp(-iHeight / shMie) * iStepSize;
         iOdRlh += optic_rlh;
         iOdMie += optic_mie;
-        float jStepSize = ray_vs_sphere(eyePos, r, rAtmos).y / float(jSteps);
+        float jStepSize = ray_vs_sphere(eyePos, r, atmosphereEnd).y / float(jSteps);
         float jTime = 0.0;
         float jOdRlh = 0.0;
         float jOdMie = 0.0;
         //shadow resampling
         for (int j = 0; j < jSteps; j++) {
             vec3 jPos = iPos + sunDir * (jTime + jStepSize * 0.5);
-            float jHeight = length(jPos) - rPlanet;
+            float jHeight = length(jPos) - atmosphereStart;
             float jDens = 0.0;
             jOdRlh += exp(-jHeight / shRlh) * jStepSize;
             jOdMie += exp(-jHeight / shMie) * jStepSize;
@@ -95,9 +96,12 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
         totalMie += optic_mie * attn;
         iTime += iStepSize;
     }
-    intermediatePos += r * (iTime + iStepSize * 0.5);
-    //24 samples in clouds
 
+    //go to edge of clouds
+    p = ray_vs_sphere(eyePos, r, cloudEnd);
+    p.y = min(p.y, ray_vs_sphere(eyePos, r, cloudStart).x);
+    intermediatePos = eyePos + r * (p.y - p.x);
+    //32 ? samples within clouds
 
     float T = 1.0;
     vec3 C = vec3(0,0,0);
@@ -109,52 +113,24 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
     float cStepSize = (p.y - p.x) / float(cSteps);
     for (int i=0;i<cSteps;i++) {
         vec3 iPos = intermediatePos + r * (cTime + cStepSize * 0.5);
-        float density = getDensity(iPos);
-        if(density > 0.01) {
-            T_i = exp(-1.030725 * density * cStepSize);
+        float density = testDensity(iPos);
+        //if(density > 0.01) {
+            float T_i = exp(-1.030725 * density * cStepSize);
             T *= T_i;
-            if(T < 0.01) break;
-            float light = getLight(iPos);
+            //if(T < 0.001) break;
+            float light = getLight(iPos,sunDir);
             C += T * light * density * cStepSize;
             alpha += (1. - T_i) * (1. - alpha);
-        }
+        //}
     }
-    intermediatePos += r * (cTime + cStepSize * 0.5);
-    //4 samples after clouds
-    float aTime = 0.0;
-    p = ray_vs_sphere(intermediatePos, r, rAtmos);
-    p.y = min(p.y, ray_vs_sphere(intermediatePos, r, cloudEnd).x);
-    float aStepSize = (p.y - p.x) / float(iSteps/2);
-    for (int i=0;i<(iSteps/2);i++) {
-        vec3 iPos = intermediatePos + r * (aTime + aStepSize * 0.5);
-        float iHeight = length(iPos) - rPlanet;
-        float optic_rlh = exp(-iHeight / shRlh) * iStepSize;
-        float optic_mie = exp(-iHeight / shMie) * iStepSize;
-        iOdRlh += optic_rlh;
-        iOdMie += optic_mie;
-        float jStepSize = ray_vs_sphere(intermediatePos, r, rAtmos).y / float(jSteps);
-        float jTime = 0.0;
-        float jOdRlh = 0.0;
-        float jOdMie = 0.0;
-        for (int j = 0; j < jSteps; j++) {
-            vec3 jPos = iPos + sunDir * (jTime + jStepSize * 0.5);
-            float jHeight = length(jPos) - rPlanet;
-            jOdRlh += exp(-jHeight / shRlh) * jStepSize;
-            jOdMie += exp(-jHeight / shMie) * jStepSize;
-            jTime += jStepSize;
-        }
-        vec3 attn = exp(-(kMie * (iOdMie + jOdMie) + kRlh * (iOdRlh + jOdRlh)));
-        totalRlh += optic_rlh * attn;
-        totalMie += optic_mie * attn;
-        aTime += aStepSize;
-    }
+    
     vec3 ambientColor = vec3(135, 206, 235); //sky blue
     if(c > 0.0) {
         //facing sun, add sun
         float X = 1.0 + 0.0015 * tan(PI*c/2.0);
-        ambientColor = X * iSun * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
+        ambientColor = X * sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
     } else {
-        ambientColor = iSun * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
+        ambientColor = sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
     }
     return mix(ambientColor, C/(0.000001+alpha), alpha);
 }
@@ -177,13 +153,21 @@ vec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr) {
     );
 }
 
-float getDensity(vec3 pos) {
+float testDensity(vec3 pos) {
     vec2 uv = floor(pos.xz * 1e-3);
     float mapped = mod(uv.x + uv.y, 2.0);
-    float height = pos.y / rAtmos;
-    return height * mapped;
+    float height = pos.y / float(6700e3);
+    return mapped * height + 0.0001;
 }
 
-float getLight() {
-    return 1.0;
+float getLight(vec3 pos, vec3 sunDir) {
+    float T = 1.0;
+    float sampleDistance = 111.1;
+    for(int j=0;j<jSteps;j++) {
+        vec3 currPos = pos + sunDir * (sampleDistance * (float(jSteps) + 0.5)); 
+        float dens = testDensity(currPos);
+        float T_i = exp(-1.030725 * dens * sampleDistance);
+	    T *= T_i;
+    }
+    return T;
 }
