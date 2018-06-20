@@ -46,7 +46,7 @@ vec3 sampleAtmosphere (
                     ray,
                     vec3(0, 6372e3, 0),
                     sunDirection,
-                    10.0,
+                    33.0,
                     6371e3,
                     6471e3,
                     vec3(5.5e-6, 13.0e-6, 22.4e-6),
@@ -78,7 +78,7 @@ float currDensity(vec3 pos) {
     v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
     v += amp*noise(uvw); amp*=aFac; uvw*=fFac;
     v = smoothstep(0.4,0.6,v);
-    return v*v*40.;
+    return 0.0;
 }
 
 vec3 atmosphere(
