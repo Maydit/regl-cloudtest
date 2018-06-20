@@ -1,7 +1,8 @@
 #define PI 3.141592
 #define iSteps 16
-#define cSteps 32
+#define cSteps 16
 #define jSteps 8
+#define COVERAGE 0.5
 
 precision highp float;
 
@@ -15,6 +16,7 @@ uniform mat4 invProjection, invView;
 vec3 sampleAtmosphere(vec3 position, vec3 sunDirection);
 vec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr);
 float testDensity(vec3 pos);
+float getDensity(vec3 pos);
 float getLight(vec3 pos, vec3 sunDir);
 
 
@@ -32,7 +34,7 @@ void main() {
 vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
     const float sunIntensity = 33.0;
     //heights
-    const vec3 eyePos = vec3(0, 6371.01e3, 0);
+    const vec3 eyePos = vec3(0, 6372e3, 0);
     const float atmosphereStart = 6371e3;
     const float cloudStart = 6373e3;
     const float cloudEnd = 6377e3;
@@ -109,19 +111,21 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
 
     float cTime = 0.0;
     p = ray_vs_sphere(intermediatePos, r, cloudEnd);
-    p.y = min(p.y, ray_vs_sphere(intermediatePos, r, cloudStart).x);
-    float cStepSize = (p.y - p.x) / float(cSteps);
-    for (int i=0;i<cSteps;i++) {
-        vec3 iPos = intermediatePos + r * (cTime + cStepSize * 0.5);
-        float density = testDensity(iPos);
-        //if(density > 0.01) {
-            float T_i = exp(-1.030725 * density * cStepSize);
-            T *= T_i;
-            //if(T < 0.001) break;
-            float light = getLight(iPos,sunDir);
-            C += T * light * density * cStepSize;
-            alpha += (1. - T_i) * (1. - alpha);
-        //}
+    if(p.x < p.y) {
+        p.y = min(p.y, ray_vs_sphere(intermediatePos, r, cloudStart).x);
+        float cStepSize = (p.y - p.x) / float(cSteps);
+        for (int i=0;i<cSteps;i++) {
+            vec3 iPos = intermediatePos + r * (cTime + cStepSize * 0.5);
+            float density = getDensity(iPos);
+            //if(density > 0.01) {
+                float T_i = exp(-1.030725 * density * cStepSize);
+                T *= T_i;
+                if(T < 0.001) break;
+                float light = getLight(iPos,sunDir);
+                C += T * light * density * cStepSize;
+                alpha += (1. - T_i) * (1. - alpha);
+            //}
+        }
     }
     
     vec3 ambientColor = vec3(135, 206, 235); //sky blue
@@ -158,6 +162,37 @@ float testDensity(vec3 pos) {
     float mapped = mod(uv.x + uv.y, 2.0);
     float height = pos.y / float(6700e3);
     return mapped * height + 0.0001;
+}
+
+float noise(vec3 x){
+	vec3 p = floor(x);
+	vec3 f = fract(x);
+	f = f*f*(3.0 - 2.0*f);
+	vec2 uv = (p.xy + vec2(37.0, 17.0)*p.z) + f.xy;
+	vec2 rg = texture2D( perlin, (uv+.5)/256., 0.).yx;
+	return mix(rg.x, rg.y, f.z);
+}
+
+float get_noise(vec3 pos) {
+    vec3 p = pos;
+    float freq = 2.76434;
+	float
+	t  = 0.51749673 * noise(p); p *= freq;
+	t += 0.25584929 * noise(p); p *= freq;
+	t += 0.12527603 * noise(p); p *= freq;
+	t += 0.06255931 * noise(p);
+	
+	return t;
+}
+
+float getDensity(vec3 pos) {
+    vec3 p = pos * .0212242;
+	float dens = get_noise(p);
+	
+	float cov = 1. - COVERAGE;
+	dens *= smoothstep (cov, cov + .05, dens);
+
+	return clamp(dens, 0., 1.);
 }
 
 float getLight(vec3 pos, vec3 sunDir) {
