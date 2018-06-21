@@ -14,6 +14,10 @@ const setup = regl({
         [0, 0, 0],
         [-Math.sin(t*0.76), 0.6*Math.sin(t*0.51) + 0.4, -Math.cos(t*0.76)],
         [0, 1, 0])
+        /*return mat4.lookAt([],
+        [0, 0, 0],
+        [0, 1, 0.01],
+        [0, 1, 0])*/
     },
     projection: ({viewportWidth, viewportHeight}) =>
     mat4.perspective([],
@@ -30,7 +34,10 @@ require('resl')({
       type: 'image',
       src: 'src/assets/cloudnoise.png',
       parser: (data) => regl.texture({
-        data: data
+        data: data,
+        min: 'linear',
+        mag: 'linear',
+        wrap: 'repeat',
       })
     }
   },
@@ -42,40 +49,16 @@ require('resl')({
       })
       setup(() => {
         drawSky({perlin})
-        //drawBunny()
       })
     })
   }
-})
-
-const drawBunny = regl({
-  vert: `
-  precision mediump float;
-  attribute vec3 position;
-  uniform mat4 model, view, projection;
-  void main() {
-    gl_Position = projection * view * model * vec4(position, 1);
-  }`,
-  frag: `
-  precision mediump float;
-  void main() {
-    gl_FragColor = vec4(0, 1, 1, 1);
-  }`,
-  uniforms: {
-    model: mat4.identity([]),
-    view: regl.context('view'),
-    projection: regl.context('projection')
-  },
-  attributes: {
-    position: bunny.positions,
-  },
-  elements: bunny.cells
 })
 
 const drawSky = regl({
   frag: glsl('./gl/sky_frag2.glsl'),
   vert: glsl('./gl/sky_vert.glsl'),
   uniforms: {
+    time: ({tick}) => tick,
     perlin: regl.prop('perlin'),
     viewportHeight: regl.context('viewportHeight'),
     viewportWidth: regl.context('viewportWidth'),
