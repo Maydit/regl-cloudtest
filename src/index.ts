@@ -9,15 +9,15 @@ const regl = require('regl')({
 const setup = regl({
   context: {
     view: ({tick}) => {
-      const t = 0.01 * tick
-      return mat4.lookAt([],
+      const t = 0.001 * tick
+      /*return mat4.lookAt([],
         [0, 0, 0],
         [-Math.sin(t*0.76), 0.6*Math.sin(t*0.51) + 0.4, -Math.cos(t*0.76)],
-        [0, 1, 0])
-        /*return mat4.lookAt([],
-        [0, 0, 0],
-        [0, 1, 0.01],
         [0, 1, 0])*/
+        return mat4.lookAt([],
+        [0, 0, 0],
+        [0.707, 0.5, 1.0],
+        [0, 1, 0])
     },
     projection: ({viewportWidth, viewportHeight}) =>
     mat4.perspective([],

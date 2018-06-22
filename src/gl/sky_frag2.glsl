@@ -1,11 +1,15 @@
 #define PI 3.141592
 #define iSteps 16
 #define jSteps 8
-#define cSteps 32 //in (1,100+), default 8
+#define thickness 10e2 //in (1e2,30e2), default 10
+//cloud definition. Higher is better.
+#define cSteps 16 //in (1,100+), default 16
 #define cjSteps 3 //in (0,15), default 3
+//percent of the sky to cover in clouds
 #define COVERAGE 0.5 //in (0.0,1.0), default 0.5
 #define ABSORB 1.207523 // must be >= 1.0, default 1.207523
-#define DARKNESS 0.5 // in (0.0,1.0), default 0.88
+#define DARKNESS 0.3 // in (0.0,1.0), default 0.3, should be proportional to cSteps
+//#define EXPENSIVESKY
 
 precision highp float;
 
@@ -29,7 +33,9 @@ void main() {
     vec4 farRay = invView * invProjection * vec4(uv, 1, 1);
     vec4 nearRay = invView * invProjection * vec4(uv, 0, 1);
     vec3 position = normalize(farRay.xyz * nearRay.w - nearRay.xyz * farRay.w);
-    vec3 sunDirection = vec3(0.707, 0.707, 1.0);
+
+    vec3 sunDirection = vec3(0.707, 0.0, 1.0);
+    sunDirection.y += sin(time*0.001);
 
     vec3 c = sampleAtmosphere(position, sunDirection);
 
@@ -42,7 +48,7 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
     const vec3 eyePos = vec3(0, 6372e3, 0);
     const float atmosphereStart = 6371e3;
     const float cloudStart = 6376.5e3;
-    const float cloudEnd = cloudStart + 1e2;
+    const float cloudEnd = cloudStart + thickness;
     const float atmosphereEnd = 6471e3;
     //
     const vec3 kRlh = vec3(5.5e-6, 13.0e-6, 22.4e-6);
@@ -62,6 +68,7 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
     p.y = min(p.y, ray_vs_sphere(eyePos, r, atmosphereStart).x);
 
     float c = dot(r, sunDir);
+    #ifdef EXPENSIVESKY
     float gg = g*g;
     float cc = c*c;
     float pRlh = 3.0 / (16.0*PI) * (1.0+cc);
@@ -103,42 +110,66 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
         iTime += iStepSize;
     }
 
+    vec3 ambientColor = vec3(135, 206, 235); //sky blue
+    if(c > 0.0) {
+        //facing sun, add sun
+        float X = 1.0 + 0.0015 * tan(PI*c/2.0);
+        //float X = 1.0 + 0.1 * smoothstep(0.7, 1.0, c);
+        ambientColor = X * sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
+    } else {
+        ambientColor = sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
+    } 
+    #else
+    //cheaper sky colors. No night time.
+    vec3 ambientColor = vec3(0,0,0);
+    if(sunDir.y > -0.1) {
+	    ambientColor = mix(vec3(0.78,0.78,0.7), vec3(0.3,0.4,0.5), 0.5*((2.0*gl_FragCoord.y - viewportHeight)/viewportHeight) + 0.5);
+        ambientColor = mix(vec3(1.0,0.3,0.0),ambientColor,smoothstep(0.0,0.175,sunDir.y)); //sunrise
+        if(sunDir.y < 0.0) {
+            ambientColor = mix(vec3(0.01,0.01,0.2),ambientColor,smoothstep(-0.1,0.0,sunDir.y)); //beneath azimuth
+        }
+        if(c > 0.0) {
+            float X = 1.0 + 0.0015 * tan(PI*c/2.0);
+            ambientColor *= X * sunIntensity / 33.0;
+        } else {
+            ambientColor *= sunIntensity / 33.0;
+        }
+    }
+    #endif
     //go to edge of clouds
     p = ray_vs_sphere(eyePos, r, cloudStart);
     vec3 intermediatePos = eyePos + r * p.y;
     vec4 C = vec4(0,0,0,0);
     p = ray_vs_sphere(intermediatePos, r, cloudEnd);
-    float distanceBias = atan(p.y); //suuuper far clouds
+
+    float cStepSize =  p.y / float(cSteps);
+    float cInit = hash(time*100.0+gl_FragCoord.x+gl_FragCoord.y*1000.0);
+    cInit *= cStepSize;
+    float distanceBias = pow(1.0-0.7*r.y, 15.0); //horizon
     //only draw clouds above
-    if(r.y > 0.0 && distanceBias > 0.01) {
-        float cStepSize =  p.y / float(cSteps);
-        float cInit = hash(time*100.0+gl_FragCoord.x+gl_FragCoord.y*1000.0);
-        cInit *= cStepSize;
+    if(r.y > 0.0 && distanceBias < .98) {
         for (int i=0;i<cSteps;i++) {
             if(C.w > .99) break;
             float sampleDistance = cInit + float(i) * cStepSize;
             vec3 iPos = intermediatePos + r * sampleDistance;
-            vec3 adjPos = iPos - vec3(0,atmosphereStart-1e3,0);
+            vec3 adjPos = iPos - vec3(0,atmosphereStart,0);
             float density = getDensity(adjPos);
-            float light = getLight(adjPos,sunDir);
-            vec3 localcolor = mix(vec3(1.0-float(DARKNESS)), vec3(1.0,1.0,1.0), light);
+            float light = 1.0;
+            if(density > 0.01) {
+                light = getLight(adjPos,sunDir);
+            }
+            vec3 localcolor = mix(vec3(1.0-DARKNESS), vec3(1.0,1.0,1.0), light);
+            //add a little bit of color
+            localcolor.r = mix(max(ambientColor,localcolor),localcolor,light).r;
+            localcolor.g = mix(max(ambientColor*0.5,localcolor),localcolor,exp(-density*density)).g;
+            //clouds should not be white at night
+            localcolor *= smoothstep(0.0,1.0,ambientColor.b);
             density = (1.0-C.w)*density;
             C += vec4(localcolor*density, density);
         }
         C.rgb /= (0.0001+C.w);
     }
-    
-    vec3 ambientColor = vec3(135, 206, 235); //sky blue
-    if(c > 0.0) {
-        //facing sun, add sun
-        //float X = 1.0 + 0.0015 * tan(PI*c/2.0);
-        float X = 1.0 + 0.0015 * smoothstep(0.7, 1.0, c);
-        ambientColor = X * sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
-    } else {
-        ambientColor = sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
-    }
-    float t = pow(1.0-0.7*r.y, 15.0)*(distanceBias); //horizon
-    return mix(ambientColor, C.rgb, C.w*(1.0-t));
+    return mix(ambientColor, C.rgb, C.w*(1.0-distanceBias));
 }
 
 
@@ -206,7 +237,7 @@ float getDensity(vec3 pos) {
 
 float getLight(vec3 pos, vec3 sunDir) {
     float T = 1.0;
-    float sampleDistance = 2.5;
+    float sampleDistance = 5.0;
     for(int j=0;j<cjSteps;j++) {
         vec3 currPos = pos + sunDir * (sampleDistance * (float(jSteps) + 0.5)); 
         float dens = getDensity(currPos);
