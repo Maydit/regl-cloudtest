@@ -1,6 +1,6 @@
 import glsl = require('glslify');
 import mat4 = require('gl-mat4');
-import bunny = require('bunny');
+import vec3 = require('gl-vec3');
 
 const regl = require('regl')({
   canvas: document.getElementById('regl-canvas'),
@@ -9,14 +9,10 @@ const regl = require('regl')({
 const setup = regl({
   context: {
     view: ({tick}) => {
-      const t = 0.001 * tick
-      /*return mat4.lookAt([],
-        [0, 0, 0],
-        [-Math.sin(t*0.76), 0.6*Math.sin(t*0.51) + 0.4, -Math.cos(t*0.76)],
-        [0, 1, 0])*/
+      const t = 0.005 * tick
         return mat4.lookAt([],
         [0, 0, 0],
-        [0.707, 0.5, 1.0],
+        [0.707, 0.5 + 0.5 * Math.sin(t), 1.0],
         [0, 1, 0])
     },
     projection: ({viewportWidth, viewportHeight}) =>
@@ -27,7 +23,6 @@ const setup = regl({
       1000)
   }
 })
-console.log("imageload begin");
 require('resl')({
   manifest: {
     perlin: {
@@ -42,7 +37,6 @@ require('resl')({
     }
   },
   onDone: ({perlin}) => {
-    console.log("frame begin");
     regl.frame(() => {
       regl.clear({
         color: [0,0,0,255]
@@ -60,6 +54,12 @@ const drawSky = regl({
   uniforms: {
     time: ({tick}) => tick,
     perlin: regl.prop('perlin'),
+    coverage: 0.5, 
+    absorbtion: 1.207523, 
+    darkness: 0.4,
+    height: 5.5e3,
+    thickness: 10e2,
+    sunDirection: ({tick}) => [0.707,2 * Math.sin(tick * 0.001),1.0],
     viewportHeight: regl.context('viewportHeight'),
     viewportWidth: regl.context('viewportWidth'),
     invView: ({view}) => mat4.invert([], view),
