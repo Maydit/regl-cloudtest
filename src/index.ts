@@ -1,6 +1,5 @@
 import glsl = require('glslify');
 import mat4 = require('gl-mat4');
-import vec3 = require('gl-vec3');
 
 const regl = require('regl')({
   canvas: document.getElementById('regl-canvas'),
@@ -25,7 +24,7 @@ const setup = regl({
 })
 require('resl')({
   manifest: {
-    perlin: {
+    noise: {
       type: 'image',
       src: 'src/assets/cloudnoise.png',
       parser: (data) => regl.texture({
@@ -36,13 +35,13 @@ require('resl')({
       })
     }
   },
-  onDone: ({perlin}) => {
+  onDone: ({noise}) => {
     regl.frame(() => {
       regl.clear({
         color: [0,0,0,255]
       })
       setup(() => {
-        drawSky({perlin})
+        drawSky({noise})
       })
     })
   }
@@ -53,7 +52,7 @@ const drawSky = regl({
   vert: glsl('./gl/sky_vert.glsl'),
   uniforms: {
     time: ({tick}) => tick,
-    perlin: regl.prop('perlin'),
+    noise: regl.prop('noise'),
     coverage: 0.5, 
     absorbtion: 1.207523, 
     darkness: 0.4,

@@ -12,7 +12,7 @@ precision highp float;
 
 varying vec2 uv;
 
-uniform sampler2D perlin;
+uniform sampler2D noiseSampler;
 uniform float   time, 
                 coverage, // 0.0 - 1.0
                 absorbtion, // >= 1.0
@@ -33,8 +33,8 @@ float noise(in vec3 x) {
     vec3 p = floor(x);
     vec3 f = fract(x);
 	f = f*f*(3.0-2.0*f);
-	float a = texture2D(perlin, x.xy / 256.0 + (p.z + 0.0) * 120.7123, 0.0).x;
-    float b = texture2D(perlin, x.xy / 256.0 + (p.z + 1.0) * 120.7123, 0.0).x;
+	float a = texture2D(noiseSampler, x.xy / 256.0 + (p.z + 0.0) * 120.7123, 0.0).x;
+    float b = texture2D(noiseSampler, x.xy / 256.0 + (p.z + 1.0) * 120.7123, 0.0).x;
 	return mix(a, b, f.z);
 }
 
