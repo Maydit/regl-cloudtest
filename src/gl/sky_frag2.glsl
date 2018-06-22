@@ -113,6 +113,7 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
     
     #ifdef EXPENSIVESKY
         const float sunIntensity = 33.0;
+        
         const vec3 kRlh = vec3(5.5e-6, 13.0e-6, 22.4e-6);
         const vec3 kMie = vec3(21e-6, 21e-6, 21e-6);
         const float shRlh = 8e3;
@@ -140,6 +141,7 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
             float optic_mie = exp(-iHeight / shMie) * iStepSize;
             iOdRlh += optic_rlh;
             iOdMie += optic_mie;
+            //accumulators for inner sampling
             float jStepSize = ray_vs_sphere(eyePos, r, atmosphereEnd).y / float(jSteps);
             float jTime = 0.0;
             float jOdRlh = 0.0;
@@ -148,7 +150,6 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
             for (int j = 0; j < jSteps; j++) {
                 vec3 jPos = iPos + sunDir * (jTime + jStepSize * 0.5);
                 float jHeight = length(jPos) - atmosphereStart;
-                float jDens = 0.0;
                 jOdRlh += exp(-jHeight / shRlh) * jStepSize;
                 jOdMie += exp(-jHeight / shMie) * jStepSize;
                 jTime += jStepSize;
@@ -167,13 +168,19 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
         } 
     #else
         //cheaper sky colors.
-        ambientColor = vec3(0.01, 0.01, 0.2);
+        //What to change to make the colors nicer:
+        const vec3 duskColor = vec3(0.01, 0.01, 0.2);
+        const vec3 sunriseColor = vec3(1.0, 0.3, 0.0);
+        const vec3 topColor = vec3(0.78, 0.78, 0.7);
+        const vec3 botColor = vec3(0.3, 0.4, 0.5);
+        // :^)
+        ambientColor = duskColor;
         if(sunDir.y > -0.1) {
             float screenHeight = (2.0 * gl_FragCoord.y - viewportHeight) / viewportHeight;
-            ambientColor = mix(vec3(0.78, 0.78, 0.7), vec3(0.3, 0.4, 0.5), 0.5 * screenHeight + 0.5);
-            ambientColor = mix(vec3(1.0, 0.3, 0.0), ambientColor, smoothstep(0.0, 0.175, sunDir.y)); //sunrise
+            ambientColor = mix(topColor, botColor, 0.5 * screenHeight + 0.5);
+            ambientColor = mix(sunriseColor, ambientColor, smoothstep(0.0, 0.175, sunDir.y)); //sunrise
             if(sunDir.y < 0.0) {
-                ambientColor = mix(vec3(0.01, 0.01, 0.2), ambientColor, smoothstep(-0.1, 0.0, sunDir.y)); //beneath azimuth
+                ambientColor = mix(duskColor, ambientColor, smoothstep(-0.1, 0.0, sunDir.y)); //beneath azimuth
             }
             //add sun
             if(c > 0.0) {
