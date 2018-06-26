@@ -48,7 +48,7 @@ require('resl')({
 })
 
 const drawSky = regl({
-  frag: glsl('./gl/sky_frag2.glsl'),
+  frag: glsl('./gl/sky_frag.glsl'),
   vert: glsl('./gl/sky_vert.glsl'),
   uniforms: {
     time: ({tick}) => tick,
