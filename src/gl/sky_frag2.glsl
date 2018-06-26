@@ -4,7 +4,6 @@
 #define cSteps 16 //in (1,100+), default 16
 #define cjSteps 3 //in (0,15), default 3
 
-//#define EXPENSIVESKY //sky definition.
 #define iSteps 16
 #define jSteps 8
 
@@ -29,7 +28,7 @@ float hash(float n) {
 }
 
 //3d noise function from 2d texture -- iq
-float noise(in vec3 x) {
+float noise(in vec3 x, sampler2D noiseSampler) {
     vec3 p = floor(x);
     vec3 f = fract(x);
 	f = f*f*(3.0-2.0*f);
@@ -39,38 +38,38 @@ float noise(in vec3 x) {
 }
 
 // Fractional Brownian motion
-float fbm(vec3 p) {
-    float f = 0.5101 * noise(p); 
+float fbm(vec3 p, sampler2D nS) {
+    float f = 0.5101 * noise(p, nS); 
     p *= 2.02;
-    f += 0.2473 * noise(p); 
+    f += 0.2473 * noise(p, nS); 
     p *= 2.01;
-    f += 0.1247 * noise(p); 
+    f += 0.1247 * noise(p, nS); 
     p *= 2.04;
-    f += 0.0614 * noise(p);
+    f += 0.0614 * noise(p, nS);
     return f;
 }
 
-float getDensity(vec3 pos) {
+float getDensity(vec3 pos, sampler2D nS) {
     pos.x += time * 10.0;
     vec3 h = pos * 0.00114 * 0.5; //scaling factor. Smaller = larger clouds
-	float dens = fbm(h);
+	float dens = fbm(h, nS);
 	float cov = 1.0 - coverage;
 	dens *= smoothstep (cov, cov + .05, dens);
 	return smoothstep(0.3, 1.0, dens) * .9; //arbitrary choice of 0.3. 0.0 might look better.
 }
 
-float getLight(vec3 pos, vec3 sunDir) {
+float getLight(vec3 pos, vec3 sunDir, sampler2D nS) {
     float T = 1.0;
     float sampleDistance = 5.0;
     for(int j = 0; j < cjSteps; j++) {
         vec3 currPos = pos + sunDir * sampleDistance * (float(jSteps) + 0.5); 
-        float dens = getDensity(currPos);
+        float dens = getDensity(currPos, nS);
         float T_i = exp(-absorbtion * dens * sampleDistance);
 	    T *= T_i;
     }
     //take one more sample far away
     vec3 farPos = pos + sunDir * 111.1;
-    float dens = getDensity(farPos);
+    float dens = getDensity(farPos, nS);
     float T_i = exp(-absorbtion * dens * sampleDistance);
 	T *= T_i;
     return T;
@@ -91,7 +90,7 @@ vec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr) {
     );
 }
 
-vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
+vec3 getAmbientColor(vec3 position, vec3 sunDirection, float viewportHeight, bool expensiveSky) {
     //heights
     const vec3 eyePos = vec3(0, 6372e3, 0);
     const float atmosphereStart = 6371e3;
@@ -108,12 +107,10 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
         return vec3(0, 0, 0);
     }
     p.y = min(p.y, ray_vs_sphere(eyePos, r, atmosphereStart).x);
-
-    vec3 ambientColor = vec3(135, 206, 235); //sky blue
-    
-    #ifdef EXPENSIVESKY
+    vec3 ambientColor = vec3(0);
+    if(expensiveSky) {
         const float sunIntensity = 33.0;
-        
+
         const vec3 kRlh = vec3(5.5e-6, 13.0e-6, 22.4e-6);
         const vec3 kMie = vec3(21e-6, 21e-6, 21e-6);
         const float shRlh = 8e3;
@@ -166,7 +163,7 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
         } else {
             ambientColor = sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
         } 
-    #else
+    } else {
         //cheaper sky colors.
         //What to change to make the colors nicer:
         const vec3 duskColor = vec3(0.01, 0.01, 0.2);
@@ -188,38 +185,67 @@ vec3 sampleAtmosphere(vec3 position, vec3 sunDirection) {
                 ambientColor *= X;
             }
         }
-    #endif
-    //go to edge of clouds
-    p = ray_vs_sphere(eyePos, r, cloudStart);
-    vec3 intermediatePos = eyePos + r * p.y;
-    vec4 color = vec4(0);
-    p = ray_vs_sphere(intermediatePos, r, cloudEnd);
+    }
+    return ambientColor;
+}
 
+vec3 sampleAtmosphere(  
+                        vec3 position, 
+                        vec3 sunDirection,
+                        float viewportHeight,
+                        sampler2D noiseSampler,
+                        float time, 
+                        float coverage, // 0.0 - 1.0
+                        float absorbtion, // >= 1.0
+                        float darkness, // 0.0 - 1.0
+                        float height, // weird stuff happens below 2e3
+                        float thickness,
+                        bool expensiveSky,
+                        bool clouds
+                      ) {
+    const vec3 eyePos = vec3(0, 6372e3, 0);
+    const float atmosphereStart = 6371e3;
+    float cloudStart = atmosphereStart + height;
+    float cloudEnd = cloudStart + thickness;
+    const float atmosphereEnd = 6471e3;
+
+    vec3 sunDir = normalize(sunDirection);
+    vec3 r = normalize(position);
+
+    vec3 ambientColor = getAmbientColor(position, sunDirection, viewportHeight, expensiveSky);
+
+    vec4 color = vec4(0);
     float distanceBias = pow(1.0 - 0.7 * r.y, 15.0); //horizon
-    //only draw clouds above us and close-ish
-    if(r.y > 0.0 && distanceBias < .98) {
-        float cStepSize =  p.y / float(cSteps);
-        float cInit = hash(time * 100.0 + gl_FragCoord.x + gl_FragCoord.y * 1098.0); //dithering
-        cInit *= cStepSize;
-        for (int i = 0; i < cSteps; i++) {
-            if(color.w > .99) break;
-            float sampleDistance = cInit + float(i) * cStepSize;
-            vec3 cloudPos = intermediatePos + r * sampleDistance - vec3(0, atmosphereStart, 0);
-            float density = getDensity(cloudPos);
-            vec3 localColor = vec3(1.0);
-            if(density > 0.01) {
-                float light = getLight(cloudPos, sunDir);
-                localColor = mix(vec3(1.0 - darkness), vec3(1.0), light);
-                //add a little bit of color to the shadows
-                localColor.r = mix(max(ambientColor, localColor), localColor, light).r;
-                localColor.g = mix(max(ambientColor * 0.5, localColor), localColor, exp(-density * density)).g;
-                //clouds should not be white at night
-                localColor *= smoothstep(0.0, 1.0, ambientColor.b);
+    if(clouds) {
+        //go to edge of clouds
+        vec2 p = ray_vs_sphere(eyePos, r, cloudStart);
+        vec3 intermediatePos = eyePos + r * p.y;
+        p = ray_vs_sphere(intermediatePos, r, cloudEnd);
+        //only draw clouds above us and close-ish
+        if(r.y > 0.0 && distanceBias < .98) {
+            float cStepSize =  p.y / float(cSteps);
+            float cInit = hash(time * 100.0 + gl_FragCoord.x + gl_FragCoord.y * 1098.0); //dithering
+            cInit *= cStepSize;
+            for (int i = 0; i < cSteps; i++) {
+                if(color.w > .99) break;
+                float sampleDistance = cInit + float(i) * cStepSize;
+                vec3 cloudPos = intermediatePos + r * sampleDistance - vec3(0, atmosphereStart, 0);
+                float density = getDensity(cloudPos, noiseSampler);
+                vec3 localColor = vec3(1.0);
+                if(density > 0.01) {
+                    float light = getLight(cloudPos, sunDir, noiseSampler);
+                    localColor = mix(vec3(1.0 - darkness), vec3(1.0), light);
+                    //add a little bit of color to the shadows
+                    localColor.r = mix(max(ambientColor, localColor), localColor, light).r;
+                    localColor.g = mix(max(ambientColor * 0.5, localColor), localColor, exp(-density * density)).g;
+                    //clouds should not be white at night
+                    localColor *= smoothstep(0.0, 1.0, ambientColor.b);
+                }
+                density = (1.0 - color.w) * density;
+                color += vec4(localColor * density, density);
             }
-            density = (1.0 - color.w) * density;
-            color += vec4(localColor * density, density);
+            color.rgb /= (0.0001 + color.w);
         }
-        color.rgb /= (0.0001 + color.w);
     }
     return mix(ambientColor, color.rgb, color.w * (1.0-distanceBias));
 }
@@ -229,7 +255,20 @@ void main() {
     vec4 nearRay = invView * invProjection * vec4(uv, 0, 1);
     vec3 position = normalize(farRay.xyz * nearRay.w - nearRay.xyz * farRay.w);
 
-    vec3 c = sampleAtmosphere(position, sunDirection);
+    vec3 c = sampleAtmosphere(  
+                        position, 
+                        sunDirection,
+                        viewportHeight,
+                        noiseSampler,
+                        time, 
+                        coverage, // 0.0 - 1.0
+                        absorbtion, // >= 1.0
+                        darkness, // 0.0 - 1.0
+                        height, // weird stuff happens below 2e3
+                        thickness,
+                        true,
+                        true
+                      );
 
     gl_FragColor = vec4(c, 1);
 }

@@ -52,7 +52,7 @@ const drawSky = regl({
   vert: glsl('./gl/sky_vert.glsl'),
   uniforms: {
     time: ({tick}) => tick,
-    noise: regl.prop('noise'),
+    noiseSampler: regl.prop('noise'),
     coverage: 0.5, 
     absorbtion: 1.207523, 
     darkness: 0.4,
