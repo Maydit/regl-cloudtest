@@ -1,10 +1,9 @@
 #define CLOUDS
-//#define SKY
 
 #define PI 3.141592
 
 //cloud definition. Higher is better.
-#define cSteps 16 //in (1,100+), default 16
+#define cSteps 32 //in (1,100+), default 16
 #define cjSteps 3 //in (0,15), default 3
 
 #define iSteps 16
@@ -63,19 +62,16 @@ float getDensity(vec3 pos, sampler2D nS) {
 
 float getLight(vec3 pos, vec3 sunDir, sampler2D nS) {
     float T = 1.0;
-    float sampleDistance = 5.0;
+    float sampleDistance = 6.0 / float(cjSteps);
+    float dither = hash(time * 100.0 + gl_FragCoord.x + gl_FragCoord.y * 1098.0);
+    float cInit = dither * sampleDistance;
     for(int j = 0; j < cjSteps; j++) {
-        vec3 currPos = pos + sunDir * sampleDistance * (float(jSteps) + 0.5); 
+        vec3 currPos = pos + sunDir * (cInit + sampleDistance * (float(jSteps) + 0.5)); 
         float dens = getDensity(currPos, nS);
         float T_i = exp(-absorbtion * dens * sampleDistance);
 	    T *= T_i;
     }
-    //take one more sample far away
-    vec3 farPos = pos + sunDir * 111.1;
-    float dens = getDensity(farPos, nS);
-    float T_i = exp(-absorbtion * dens * sampleDistance);
-	T *= T_i;
-    return T;
+    return T * .9;
 }
 
 vec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr) {
@@ -93,7 +89,7 @@ vec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr) {
     );
 }
 
-vec3 getAmbientColor(vec3 position, vec3 sunDirection, float viewportHeight, bool expensiveSky) {
+vec3 getAmbientColor(vec3 position, vec3 sunDirection) {
     //heights
     const vec3 eyePos = vec3(0, 6372e3, 0);
     const float atmosphereStart = 6371e3;
@@ -111,9 +107,7 @@ vec3 getAmbientColor(vec3 position, vec3 sunDirection, float viewportHeight, boo
     }
     p.y = min(p.y, ray_vs_sphere(eyePos, r, atmosphereStart).x);
     vec3 ambientColor = vec3(0);
-    if(expensiveSky) {
         const float sunIntensity = 33.0;
-
         const vec3 kRlh = vec3(5.5e-6, 13.0e-6, 22.4e-6);
         const vec3 kMie = vec3(21e-6, 21e-6, 21e-6);
         const float shRlh = 8e3;
@@ -159,35 +153,13 @@ vec3 getAmbientColor(vec3 position, vec3 sunDirection, float viewportHeight, boo
             totalMie += optic_mie * attn;
             iTime += iStepSize;
         }
-        if(c > 0.0) {
-            //facing sun, add sun
-            float X = 1.0 + 0.0015 * tan(PI*c/2.0);
-            ambientColor = X * sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
-        } else {
-            ambientColor = sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
-        } 
+    if(c > 0.0) {
+        float factor = tan(PI * c / 2.0) * c / 0.5;
+        factor = min(factor, 4.0 / 0.0015);
+        float X = 1.0 + 0.0015 * factor;
+        ambientColor = X * sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
     } else {
-        //cheaper sky colors.
-        //What to change to make the colors nicer:
-        const vec3 duskColor = vec3(0.01, 0.01, 0.2);
-        const vec3 sunriseColor = vec3(1.0, 0.3, 0.0);
-        const vec3 topColor = vec3(0.78, 0.78, 0.7);
-        const vec3 botColor = vec3(0.3, 0.4, 0.5);
-        // :^)
-        ambientColor = duskColor;
-        if(sunDir.y > -0.1) {
-            float screenHeight = (2.0 * gl_FragCoord.y - viewportHeight) / viewportHeight;
-            ambientColor = mix(topColor, botColor, 0.5 * screenHeight + 0.5);
-            ambientColor = mix(sunriseColor, ambientColor, smoothstep(0.0, 0.175, sunDir.y)); //sunrise
-            if(sunDir.y < 0.0) {
-                ambientColor = mix(duskColor, ambientColor, smoothstep(-0.1, 0.0, sunDir.y)); //beneath azimuth
-            }
-            //add sun
-            if(c > 0.0) {
-                float X = 1.0 + 0.0015 * tan(PI*c/2.0);
-                ambientColor *= X;
-            }
-        }
+        ambientColor = sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
     }
     return ambientColor;
 }
@@ -203,7 +175,6 @@ vec3 sampleAtmosphere(
                         float darkness, // 0.0 - 1.0
                         float height, // weird stuff happens below 2e3
                         float thickness,
-                        bool expensiveSky,
                         bool clouds
                       ) {
     const vec3 eyePos = vec3(0, 6372e3, 0);
@@ -215,7 +186,7 @@ vec3 sampleAtmosphere(
     vec3 sunDir = normalize(sunDirection);
     vec3 r = normalize(position);
 
-    vec3 ambientColor = getAmbientColor(position, sunDirection, viewportHeight, expensiveSky);
+    vec3 ambientColor = getAmbientColor(r, sunDir);
 
     vec4 color = vec4(0);
     float distanceBias = pow(1.0 - 0.7 * r.y, 15.0); //horizon
@@ -235,14 +206,12 @@ vec3 sampleAtmosphere(
                 vec3 cloudPos = intermediatePos + r * sampleDistance - vec3(0, atmosphereStart, 0);
                 float density = getDensity(cloudPos, noiseSampler);
                 vec3 localColor = vec3(1.0);
-                if(density > 0.01) {
+                if(density > 0.001) {
                     float light = getLight(cloudPos, sunDir, noiseSampler);
-                    localColor = mix(vec3(1.0 - darkness), vec3(1.0), light);
-                    //add a little bit of color to the shadows
-                    localColor.r = mix(max(ambientColor, localColor), localColor, light).r;
-                    localColor.g = mix(max(ambientColor * 0.5, localColor), localColor, exp(-density * density)).g;
+                    localColor = mix(localColor * light, vec3(1.0), 1.0 - darkness);
+                    //localColor *= light * cStepSize * (1.0 - darkness);
                     //clouds should not be white at night
-                    localColor *= smoothstep(0.0, 1.0, ambientColor.b);
+                    localColor *= smoothstep(0.0, 1.0, length(ambientColor));
                 }
                 density = (1.0 - color.w) * density;
                 color += vec4(localColor * density, density);
@@ -263,9 +232,6 @@ void main() {
     #ifdef CLOUDS
     clouds = true;
     #endif
-    #ifdef SKY
-    expensiveSky = true;
-    #endif
 
     vec3 c = sampleAtmosphere(  
                         position, 
@@ -278,7 +244,6 @@ void main() {
                         darkness, // 0.0 - 1.0
                         height, // weird stuff happens below 2e3
                         thickness,
-                        expensiveSky,
                         clouds
                       );
 

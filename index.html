@@ -17,9 +17,20 @@
       width: 100%;
       height: 100%;
     }
+    #slider-wrap {
+      position: fixed;
+      z-index: 10;
+    }
     </style>
   </head>
   <body>
+    <div id="slider-wrap">
+      <input type="range" id="slider-height" />
+      <input type="range" id="slider-thickness" />
+      <input type="range" id="slider-coverage" />
+      <input type="range" id="slider-darkness" />
+      <input type="range" id="slider-absorbtion" />
+    </div>
     <div id="regl-wrap">
       <canvas id="regl-canvas" width="500" height="500"></canvas>
     </div>
