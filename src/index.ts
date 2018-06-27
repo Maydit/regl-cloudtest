@@ -6,9 +6,12 @@ const regl = require('regl')({
 });
 
 function getSunDir(tick) {
-  return [0.707, 0.5, 1.0];
   return [0.707 + 2 * Math.sin(tick * 0.005),1.8 + 2 * Math.sin(tick * 0.002 + Math.PI),1.0 + 2 * Math.cos(tick * 0.005)];
 }
+function getMoonDir(tick) {
+  return [1.0, 0.5, 1.0];
+}
+
 function heightChange(ev:any) {
   height = ev.currentTarget.value * 1000.0;
   console.log(height);
@@ -40,11 +43,12 @@ let thickness = 10e2;
 
 const setup = regl({
   context: {
+    moonDirection: ({tick}) => getMoonDir(tick),
     sunDirection: ({tick}) => getSunDir(tick),
     view: ({tick}) => {
         return mat4.lookAt([],
         [0, 0, 0],
-        getSunDir(30),
+        getMoonDir(0),
         [0, 1, 0])
     },
     projection: ({viewportWidth, viewportHeight}) =>
@@ -92,6 +96,7 @@ const drawSky = regl({
     darkness: regl.prop('darkness'),
     height: regl.prop('height'),
     thickness: regl.prop('thickness'),
+    moonDirection: regl.context('moonDirection'),
     sunDirection: regl.context('sunDirection'),
     viewportHeight: regl.context('viewportHeight'),
     viewportWidth: regl.context('viewportWidth'),

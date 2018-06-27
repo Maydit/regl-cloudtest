@@ -22,7 +22,7 @@ uniform float   time,
                 thickness; // ~10e2 - ~30e2
 uniform float viewportWidth, viewportHeight;
 uniform mat4 invProjection, invView;
-uniform vec3 sunDirection;
+uniform vec3 sunDirection, moonDirection;
 
 // random/hash function              
 float hash(float n) {
@@ -89,15 +89,16 @@ vec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr) {
     );
 }
 
-vec3 getAmbientColor(vec3 position, vec3 sunDirection) {
+vec3 getAmbientColor(vec3 position, vec3 sunDirection, vec3 moonDirection) {
     //heights
     const vec3 eyePos = vec3(0, 6372e3, 0);
     const float atmosphereStart = 6371e3;
-    float cloudStart = 6371e3 + height;
+    float cloudStart = atmosphereStart + height;
     float cloudEnd = cloudStart + thickness;
     const float atmosphereEnd = 6471e3;
     
     vec3 sunDir = normalize(sunDirection);
+    vec3 moonDir = normalize(moonDirection);
     vec3 r = normalize(position);
     float c = dot(r, sunDir);
     
@@ -164,9 +165,39 @@ vec3 getAmbientColor(vec3 position, vec3 sunDirection) {
     return ambientColor;
 }
 
+vec3 getNighttimeColor(vec3 r, vec3 sunDirection, vec3 moonDirection, sampler2D noiseSampler) {
+    //heights
+    const vec3 eyePos = vec3(0, 6372e3, 0);
+    const float atmosphereStart = 6371e3;
+    float cloudStart = atmosphereStart + height;
+    float cloudEnd = cloudStart + thickness;
+    const float atmosphereEnd = 6471e3;
+    const float moonHeight = 384402e3;
+    
+    vec3 sunDir = normalize(sunDirection);
+    vec3 moonDir = normalize(moonDirection);
+    r = normalize(r);
+
+    vec2 p = ray_vs_sphere(eyePos, r, atmosphereEnd);
+    if (p.x > p.y) {
+        return vec3(0, 0, 0);
+    }
+
+    if(dot(r,moonDir) > 0.998) { //ray facing moon
+        //calc if part of moon faces sun
+        //normal to moon is just the reflection of r about the plane thru moon
+        //vec3 normal = normalize(2.0 * (dot(r, moonDir)) * moonDir - r);
+        float c = dot(r, sunDir);
+        if(c > 0.5) {
+            return vec3(1);
+        }
+    }
+}
+
 vec3 sampleAtmosphere(  
                         vec3 position, 
                         vec3 sunDirection,
+                        vec3 moonDirection,
                         float viewportHeight,
                         sampler2D noiseSampler,
                         float time, 
@@ -184,9 +215,13 @@ vec3 sampleAtmosphere(
     const float atmosphereEnd = 6471e3;
 
     vec3 sunDir = normalize(sunDirection);
+    vec3 moonDir = normalize(moonDirection);
     vec3 r = normalize(position);
 
-    vec3 ambientColor = getAmbientColor(r, sunDir);
+    vec3 ambientColor = getAmbientColor(r, sunDir, moonDir);
+    if(getNighttimeColor(r, sunDir, moonDir, noiseSampler).x == 1.0) {
+        return vec3(1);
+    }
 
     vec4 color = vec4(0);
     float distanceBias = pow(1.0 - 0.7 * r.y, 15.0); //horizon
@@ -236,6 +271,7 @@ void main() {
     vec3 c = sampleAtmosphere(  
                         position, 
                         sunDirection,
+                        moonDirection,
                         viewportHeight,
                         noiseSampler,
                         time, 
