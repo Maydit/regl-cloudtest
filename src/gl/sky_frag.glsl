@@ -2,6 +2,11 @@
 
 #define PI 3.141592
 
+//to change colors: ctrl + f
+//MOON: mooncolordef
+//SKY: skycolordef
+//CLOUDS: cloudcolordef
+
 //cloud definition. Higher is better.
 #define cSteps 32 //in (1,100+), default 16
 #define cjSteps 3 //in (0,15), default 3
@@ -13,16 +18,19 @@ precision highp float;
 
 varying vec2 uv;
 
-uniform sampler2D noiseSampler;
+uniform float PASSED;
+
+uniform sampler2D noiseSampler, moonSampler;
 uniform float   time, 
                 coverage, // 0.0 - 1.0
                 absorbtion, // >= 1.0
                 darkness, // 0.0 - 1.0
                 height, // weird stuff happens below 2e3
-                thickness; // ~10e2 - ~30e2
+                thickness, // ~10e2 - ~30e2
+                lunarPhase, //0.0 - 7.9...
+                timeOfDay; //0.0 - 24.0
 uniform float viewportWidth, viewportHeight;
 uniform mat4 invProjection, invView;
-uniform vec3 sunDirection, moonDirection;
 
 // random/hash function              
 float hash(float n) {
@@ -89,7 +97,7 @@ vec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr) {
     );
 }
 
-vec3 getAmbientColor(vec3 position, vec3 sunDirection, vec3 moonDirection) {
+vec3 getAmbientColor(vec3 position, vec3 sunDirection) {
     //heights
     const vec3 eyePos = vec3(0, 6372e3, 0);
     const float atmosphereStart = 6371e3;
@@ -98,7 +106,6 @@ vec3 getAmbientColor(vec3 position, vec3 sunDirection, vec3 moonDirection) {
     const float atmosphereEnd = 6471e3;
     
     vec3 sunDir = normalize(sunDirection);
-    vec3 moonDir = normalize(moonDirection);
     vec3 r = normalize(position);
     float c = dot(r, sunDir);
     
@@ -109,7 +116,7 @@ vec3 getAmbientColor(vec3 position, vec3 sunDirection, vec3 moonDirection) {
     p.y = min(p.y, ray_vs_sphere(eyePos, r, atmosphereStart).x);
     vec3 ambientColor = vec3(0);
         const float sunIntensity = 33.0;
-        const vec3 kRlh = vec3(5.5e-6, 13.0e-6, 22.4e-6);
+        const vec3 kRlh = vec3(5.5e-6, 13.0e-6, 22.4e-6); //skycolordef
         const vec3 kMie = vec3(21e-6, 21e-6, 21e-6);
         const float shRlh = 8e3;
         const float shMie = 1.2e3;
@@ -165,39 +172,51 @@ vec3 getAmbientColor(vec3 position, vec3 sunDirection, vec3 moonDirection) {
     return ambientColor;
 }
 
-vec3 getNighttimeColor(vec3 r, vec3 sunDirection, vec3 moonDirection, sampler2D noiseSampler) {
-    //heights
-    const vec3 eyePos = vec3(0, 6372e3, 0);
-    const float atmosphereStart = 6371e3;
-    float cloudStart = atmosphereStart + height;
-    float cloudEnd = cloudStart + thickness;
-    const float atmosphereEnd = 6471e3;
-    const float moonHeight = 384402e3;
-    
-    vec3 sunDir = normalize(sunDirection);
+//this outputs whether the part of the moon indicated by the
+//direction and angle would face the sun in a certain lunar phase
+//direction assumed to lie in xy plane
+float getMoonColor(vec2 direction, float theta, float lunarPhase) {
+    vec3 moonNormal = cos(theta) * vec3(0, 0, -1) + sin(theta) * vec3(direction.x, direction.y, 0);
+    float lpDeg = mod(lunarPhase, 8.0) / 8.0 * PI * 2.0;
+    vec3 fakeSunDir = vec3(sin(lpDeg), 0, cos(lpDeg)); //arbitrary height that makes it look good
+    float c = dot(moonNormal, fakeSunDir);
+    return smoothstep(0.0,0.05,c);
+}
+
+vec3 getNighttimeColor(vec3 r, vec3 moonDirection, float lunarPhase, sampler2D moonSampler) {
+    const float moonContrast = 0.6;
+    const float moonBrightness = 0.5;
+    const float moonSize = .99; //bigger is smaller
     vec3 moonDir = normalize(moonDirection);
+    if(moonDir == vec3(0,1,0)) {
+        moonDir = normalize(vec3(0,1,0.000001)); //we will cross this with 0,1,0 later.
+    }
     r = normalize(r);
+    float sep = dot(r, moonDir);
 
-    vec2 p = ray_vs_sphere(eyePos, r, atmosphereEnd);
-    if (p.x > p.y) {
-        return vec3(0, 0, 0);
-    }
-
-    if(dot(r,moonDir) > 0.998) { //ray facing moon
+    if(sep >= moonSize) { //ray facing moon
         //calc if part of moon faces sun
-        //normal to moon is just the reflection of r about the plane thru moon
-        //vec3 normal = normalize(2.0 * (dot(r, moonDir)) * moonDir - r);
-        float c = dot(r, sunDir);
-        if(c > 0.5) {
-            return vec3(1);
-        }
-    }
+        float thetaNew = acos(sep) / acos(moonSize) * PI / 2.0;
+        vec3 projection = normalize(r - sep * moonDir); //project r onto plane defined by moonDir
+        vec3 up = vec3(0,1,0);
+        vec3 b2 = normalize(cross(up, moonDir)); //generate orthonormal basis
+        vec3 b3 = cross(b2, moonDir);
+        vec2 direction = vec2(dot(b2,projection),dot(b3,projection)); //determine coordinates relative to that orthonormal basis
+        vec2 uv2 = (thetaNew / PI * direction.yx) + vec2(0.5);
+        vec3 moonColor = vec3(texture2D(moonSampler, uv2, 0.0).r);
+        moonColor = mix(moonColor, vec3(1.0,1.0,1.0), 1.0 - moonContrast); //blend in some white
+        moonColor *= vec3(getMoonColor(direction, thetaNew, lunarPhase));
+        moonColor *= vec3(1.0,0.9,0.4); //mooncolordef
+        moonColor *= vec3(moonBrightness);
+        return smoothstep(0.0,0.005,(sep-moonSize)) * moonColor;
+    } return vec3(0);
 }
 
 vec3 sampleAtmosphere(  
                         vec3 position, 
                         vec3 sunDirection,
-                        vec3 moonDirection,
+                        bool day,
+                        float lunarPhase,
                         float viewportHeight,
                         sampler2D noiseSampler,
                         float time, 
@@ -215,12 +234,11 @@ vec3 sampleAtmosphere(
     const float atmosphereEnd = 6471e3;
 
     vec3 sunDir = normalize(sunDirection);
-    vec3 moonDir = normalize(moonDirection);
     vec3 r = normalize(position);
 
-    vec3 ambientColor = getAmbientColor(r, sunDir, moonDir);
-    if(getNighttimeColor(r, sunDir, moonDir, noiseSampler).x == 1.0) {
-        return vec3(1);
+    vec3 ambientColor = getAmbientColor(r, sunDir);
+    if(!day) {
+        ambientColor = getNighttimeColor(r, sunDir, lunarPhase, moonSampler);
     }
 
     vec4 color = vec4(0);
@@ -243,7 +261,7 @@ vec3 sampleAtmosphere(
                 vec3 localColor = vec3(1.0);
                 if(density > 0.001) {
                     float light = getLight(cloudPos, sunDir, noiseSampler);
-                    localColor = mix(localColor * light, vec3(1.0), 1.0 - darkness);
+                    localColor = mix(localColor * light, vec3(1.0, 1.0, 1.0), 1.0 - darkness); //cloudcolordef - vec3(1.0) specifically
                     //localColor *= light * cStepSize * (1.0 - darkness);
                     //clouds should not be white at night
                     localColor *= smoothstep(0.0, 1.0, length(ambientColor));
@@ -262,16 +280,25 @@ void main() {
     vec4 nearRay = invView * invProjection * vec4(uv, 0, 1);
     vec3 position = normalize(farRay.xyz * nearRay.w - nearRay.xyz * farRay.w);
 
+    float angle = timeOfDay / 24.0 * 2.0 * PI;
+
+    vec3 sunDirection = vec3(cos(angle), sin(angle), 0);
+    bool day = true;
+    if(sunDirection.y < -0.1) {
+        day = false;
+        sunDirection = vec3(-cos(angle), -sin(angle), 0);
+    }
+
     bool clouds = false;
-    bool expensiveSky = false;
     #ifdef CLOUDS
     clouds = true;
     #endif
 
-    vec3 c = sampleAtmosphere(  
+    vec3 c = sampleAtmosphere(
                         position, 
                         sunDirection,
-                        moonDirection,
+                        day,
+                        lunarPhase,
                         viewportHeight,
                         noiseSampler,
                         time, 
