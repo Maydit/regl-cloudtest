@@ -228,19 +228,19 @@ vec4 getStars(vec3 r, sampler2D starSampler, vec3 moonDirection) {
     float c = cos(angle), s = sin(angle);
     r.xy = vec2(c * r.x + s * r.y, -s * r.x + c * r.y);
     r *= sign(r.y);
-    vec2 uv3 = paraboloid_to_uv(r) * 4.0;
+    vec2 uvParaboloid = paraboloid_to_uv(r) * 4.0;
     const float theta = PI / 4.125226;
     const mat2 rotation = mat2(cos(theta), -sin(theta), cos(theta), sin(theta));
     
-    vec4 prelimAvg1 = texture2D(starSampler, uv3);
-    vec2 uv4 = (uv3 + vec2(461.42452, 135.1234) / 512.) * rotation;
-    vec4 prelimAvg2 = texture2D(starSampler, uv3);
-    uv4 = (uv3 + vec2(207.1413, 377.136537) / 512.) * rotation;
-    vec4 prelimAvg3 = texture2D(starSampler, uv3);
+    vec4 prelimAvg1 = texture2D(starSampler, uvParaboloid);
+    vec2 uvTemp = (uvParaboloid + vec2(461.42452, 135.1234) / 512.) * rotation;
+    vec4 prelimAvg2 = texture2D(starSampler, uvTemp);
+    uvTemp = (uvTemp + vec2(207.1413, 377.136537) / 512.) * rotation;
+    vec4 prelimAvg3 = texture2D(starSampler, uvTemp);
     
     starsColor = prelimAvg1 + prelimAvg2 + prelimAvg3;
     starsColor = vec4(vec3(starsColor.r), starsColor.w);
-    float twinkle = clamp(0.0, 1.0, (fract(time * 0.01 + 1e6 * (texture2D(noiseSampler, uv3 / 200.0, 1.0).r))));
+    float twinkle = clamp(0.0, 1.0, (fract(time * 0.01 + 1e6 * (texture2D(noiseSampler, uvParaboloid / 200.0, 1.0).r))));
     starsColor *= 1.0 - twinkle * twinkle;
     starsColor.w *= 0.7;
     return starsColor;
