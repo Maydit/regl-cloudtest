@@ -33,17 +33,18 @@ uniform float   time,
 uniform float viewportWidth, viewportHeight;
 uniform mat4 invProjection, invView;
 
+//maps ray to point on surface of paraboloid
 vec2 paraboloid_to_uv(vec3 pos) {
     vec3 r = normalize(pos);
     float u = r.x / (2.0 * (1.0 + r.z)) + 0.5;
     float v = 1.0 - r.y / (2.0 * (1.0 + r.z)) + 0.5;
-    return vec2(u,v);
+    return vec2(u, v);
 }
 
 float getBrightness(float timeOfDay) {
     //time goes 0.0 - 12.0 day 12.0 - 24.0 night -> 0.0
     float dayNightTransition = smoothstep(11.0, 13.0, timeOfDay) + 1.0 - smoothstep(-1.0, 1.0, timeOfDay) - smoothstep(23.0, 25.0, timeOfDay);
-    return clamp(1.0 - 0.65 * dayNightTransition, 0.0, 1.0);
+    return 1.0 - 0.65 * dayNightTransition;
 }
 
 // random/hash function              
@@ -73,7 +74,7 @@ float fbm(vec3 p, sampler2D nS) {
     return f;
 }
 
-float getDensity(vec3 pos, float coverage, sampler2D nS) {
+float getDensity(vec3 pos, float time, float coverage, sampler2D nS) {
     pos.z -= time * 10.0; //wind
     vec3 h = pos * 0.00114 * 0.5; //scaling factor. Smaller = larger clouds
 	float dens = fbm(h, nS);
@@ -82,14 +83,12 @@ float getDensity(vec3 pos, float coverage, sampler2D nS) {
 	return smoothstep(0.3, 1.0, dens) * .9; //arbitrary choice of 0.3. 0.0 might look better.
 }
 
-float getLight(vec3 pos, vec3 sunDir, float absorbtion, float coverage, sampler2D nS) {
+float getLight(vec3 pos, vec3 sunDir, float time, float absorbtion, float coverage, sampler2D nS) {
     float T = 1.0;
     float sampleDistance = 6.0 / float(cjSteps);
-    float dither = hash(time * 100.0 + gl_FragCoord.x + gl_FragCoord.y * 1098.0);
-    float cInit = dither * sampleDistance;
     for(int j = 0; j < cjSteps; j++) {
-        vec3 currPos = pos + sunDir * (cInit + sampleDistance * (float(jSteps) + 0.5)); 
-        float dens = getDensity(currPos, coverage, nS);
+        vec3 currPos = pos + sunDir * (sampleDistance * (float(jSteps) + 0.5)); 
+        float dens = getDensity(currPos, time, coverage, nS);
         float T_i = exp(-absorbtion * dens * sampleDistance);
 	    T *= T_i;
     }
@@ -179,7 +178,7 @@ vec4 getAmbientColor( vec3 position,
         }
         if(c > 0.0) {
             //facing sun, add sun
-            float X = 1.0 + 0.0015 * min(tan(PI*c/2.0),2.5e3);
+            float X = 1.0 + 0.0015 * min(tan(PI*c/2.0), 2e3);
             ambientColor = X * sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
         } else {
             ambientColor = sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
@@ -196,14 +195,14 @@ vec4 getAmbientColor( vec3 position,
         if(sunDir.y > -0.1) {
             float screenHeight = (2.0 * gl_FragCoord.y - viewportHeight) / viewportHeight;
             ambientColor = mix(topColor, botColor, 0.5 * screenHeight + 0.5);
-            vec3 sunriseCalcd = mix(sunriseColor, topColor, 0.5 * screenHeight + 0.5);
-            ambientColor = mix(sunriseCalcd, ambientColor, smoothstep(0.0, 0.175, sunDir.y)); //sunrise
+            vec3 sunriseGrad = mix(sunriseColor, topColor, 0.5 * screenHeight + 0.5);
+            ambientColor = mix(sunriseGrad, ambientColor, smoothstep(0.0, 0.175, sunDir.y)); //sunrise
             if(sunDir.y < 0.0) {
                 ambientColor = mix(duskColor, ambientColor, smoothstep(-0.1, 0.0, sunDir.y)); //beneath azimuth
             }
             //add sun
             if(c > 0.0) {
-                float X = 1.0 + 0.0015 * min(tan(PI*c/2.0),2.5e3);
+                float X = 1.0 + 0.0015 * min(tan(PI*c/2.0), 2e3);
                 ambientColor *= X;
             }
         }
@@ -222,16 +221,20 @@ float getMoonColor(vec2 direction, float theta, float lunarPhase) {
     return smoothstep(0.0,0.2,c);
 }
 
-vec4 getStars(vec3 r, sampler2D starSampler, vec3 moonDirection) {
+vec4 getStars(vec3 r, vec3 moonDirection, float time, float timeOfDay, sampler2D starSampler, sampler2D noiseSampler) {
     vec4 starsColor = vec4(0);
+
     float angle = timeOfDay / 24.0 * PI * 2.0;
     float c = cos(angle), s = sin(angle);
     r.xy = vec2(c * r.x + s * r.y, -s * r.x + c * r.y);
     r *= sign(r.y);
+
     vec2 uvParaboloid = paraboloid_to_uv(r) * 4.0;
+
     const float theta = PI / 4.125226;
     const mat2 rotation = mat2(cos(theta), -sin(theta), cos(theta), sin(theta));
     
+    //3 samples
     vec4 prelimAvg1 = texture2D(starSampler, uvParaboloid);
     vec2 uvTemp = (uvParaboloid + vec2(461.42452, 135.1234) / 512.) * rotation;
     vec4 prelimAvg2 = texture2D(starSampler, uvTemp);
@@ -246,9 +249,9 @@ vec4 getStars(vec3 r, sampler2D starSampler, vec3 moonDirection) {
     return starsColor;
 }
 
-vec4 getNighttimeColor(vec3 r, vec3 moonDirection, float lunarPhase, sampler2D moonSampler, sampler2D starSampler) {
+vec4 getNighttimeColor(vec3 r, vec3 moonDirection, float lunarPhase, sampler2D moonSampler, sampler2D starSampler, sampler2D noiseSampler) {
     const float moonContrast = 0.6;
-    const float moonBrightness = 0.999;
+    const float moonBrightness = 1.0;
     const float moonSize = .994; //bigger is smaller
     vec4 moonStarsColor = vec4(0);
 
@@ -259,7 +262,8 @@ vec4 getNighttimeColor(vec3 r, vec3 moonDirection, float lunarPhase, sampler2D m
     r = normalize(r);
     float sep = dot(r, moonDir);
 
-    moonStarsColor = getStars(r, starSampler, moonDirection);
+    //stars
+    moonStarsColor = getStars(r, moonDir, time, timeOfDay, starSampler, noiseSampler);
 
     //moon
     if(sep >= moonSize) { //ray facing moon
@@ -270,12 +274,13 @@ vec4 getNighttimeColor(vec3 r, vec3 moonDirection, float lunarPhase, sampler2D m
         vec3 b2 = normalize(cross(up, moonDir)); //generate orthonormal basis
         vec3 b3 = cross(b2, moonDir);
         vec2 direction = vec2(dot(b2,projection),dot(b3,projection)); //determine coordinates relative to that orthonormal basis
+        
         vec2 uv2 = (thetaNew / PI * direction.yx) + vec2(0.5);
-        vec4 moonColor = vec4(texture2D(moonSampler, uv2, 0.0).rgb,1.0);
-        moonColor = mix(moonColor, vec4(1.0,1.0,1.0,1.0), 1.0 - moonContrast); //blend in some white
+        vec4 moonColor = vec4(texture2D(moonSampler, uv2, 0.0).rgb, 1.0);
+        moonColor = mix(moonColor, vec4(1.0), 1.0 - moonContrast); //blend in some white
         moonColor *= vec4(vec3(moonBrightness), 1.0);
         moonColor.rgb *= clamp(vec3(getMoonColor(direction, thetaNew, lunarPhase)) + 0.35, 0.0, 1.0);
-        moonColor.w *= smoothstep(0.0,moonSize - 0.01,sep);
+        moonColor.w *= smoothstep(0.0, moonSize - 0.01, sep);
         moonColor.w *= length(moonColor.rgb);
         moonStarsColor = moonColor;
     }
@@ -288,16 +293,15 @@ vec3 sampleAtmosphere(
                         float timeOfDay,
                         float lunarPhase,
                         float viewportHeight,
-                        sampler2D moonSampler,
-                        sampler2D starSampler,
-                        sampler2D noiseSampler,
                         float time, 
                         float coverage, // 0.0 - 1.0
                         float absorbtion, // >= 1.0
                         float darkness, // 0.0 - 1.0
                         float height, // weird stuff happens below 2e3
                         float thickness,
-                        bool clouds
+                        sampler2D moonSampler,
+                        sampler2D starSampler,
+                        sampler2D noiseSampler
                       ) {
     float angle = timeOfDay / 24.0 * 2.0 * PI;
     vec3 sunDirection = vec3(cos(angle), sin(angle), 0);
@@ -312,13 +316,14 @@ vec3 sampleAtmosphere(
     vec3 moonDir = normalize(moonDirection);
     vec3 sunDir = normalize(sunDirection);
     vec3 r = normalize(position);
+
     vec4 preAmbientColor = getAmbientColor(r, sunDir, viewportHeight);
-    vec4 nightColor = getNighttimeColor(r, moonDir, lunarPhase, moonSampler, starSampler);
+    vec4 nightColor = getNighttimeColor(r, moonDir, lunarPhase, moonSampler, starSampler, noiseSampler);
     vec3 ambientColor = mix(preAmbientColor.rgb, nightColor.rgb, nightColor.w * (1.0 - smoothstep(0.0, 0.38, preAmbientColor.w)));
 
     vec4 color = vec4(0);
     float distanceBias = pow(1.0 - 0.7 * r.y, 15.0); //horizon
-    if(clouds) {
+    #ifdef CLOUDS
         //go to edge of clouds
         vec2 p = ray_vs_sphere(eyePos, r, cloudStart);
         vec3 intermediatePos = eyePos + r * p.y;
@@ -333,10 +338,10 @@ vec3 sampleAtmosphere(
                 if(color.w > .99) break;
                 float sampleDistance = cInit + float(i) * cStepSize;
                 vec3 cloudPos = intermediatePos + r * sampleDistance - vec3(0, atmosphereStart, 0);
-                float density = getDensity(cloudPos, coverage, noiseSampler);
+                float density = getDensity(cloudPos, time, coverage, noiseSampler);
                 vec3 localColor = vec3(1.0);
                 if(density > 0.001) {
-                    float light = getLight(cloudPos, sunDir, absorbtion, coverage, noiseSampler);
+                    float light = getLight(cloudPos, sunDir, time, absorbtion, coverage, noiseSampler);
                     localColor = mix(localColor * light, vec3(1.0, 1.0, 1.0), 1.0 - darkness); //cloudcolordef - vec3(1.0) specifically
                     //localColor *= light * cStepSize * (1.0 - darkness) * sunBrightness;
                     //darker at night
@@ -347,7 +352,7 @@ vec3 sampleAtmosphere(
             }
             color.rgb /= (0.0001 + color.w);
         }
-    }
+    #endif
     return mix(ambientColor, color.rgb, color.w * (1.0-distanceBias));
 }
 
@@ -356,26 +361,20 @@ void main() {
     vec4 nearRay = invView * invProjection * vec4(uv, 0, 1);
     vec3 position = normalize(farRay.xyz * nearRay.w - nearRay.xyz * farRay.w);
 
-    bool clouds = false;
-    #ifdef CLOUDS
-    clouds = true;
-    #endif
-
     vec3 c = sampleAtmosphere(
                         position, 
                         timeOfDay,
                         lunarPhase,
                         viewportHeight,
-                        moonSampler,
-                        starSampler,
-                        noiseSampler,
                         time, 
                         coverage, // 0.0 - 1.0
                         absorbtion, // >= 1.0
                         darkness, // 0.0 - 1.0
                         height, // weird stuff happens below 2e3
                         thickness,
-                        clouds
+                        moonSampler,
+                        starSampler,
+                        noiseSampler
                       );
 
     gl_FragColor = vec4(c, 1);
