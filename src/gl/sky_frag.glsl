@@ -250,6 +250,9 @@ vec4 getStars(vec3 r, vec3 moonDirection, float time, float timeOfDay, sampler2D
 }
 
 vec4 getNighttimeColor(vec3 r, vec3 moonDirection, float lunarPhase, sampler2D moonSampler, sampler2D starSampler, sampler2D noiseSampler) {
+
+    //if(r.y < 0.0) return vec4(0);
+
     const float moonContrast = 0.6;
     const float moonBrightness = 1.0;
     const float moonSize = .994; //bigger is smaller
@@ -285,6 +288,8 @@ vec4 getNighttimeColor(vec3 r, vec3 moonDirection, float lunarPhase, sampler2D m
         moonStarsColor = moonColor;
     }
 
+    //TODO: make this prettier
+    moonStarsColor = mix(moonStarsColor, vec4(0.0), clamp(-(r.y-0.1) * 10.0, 0.0, 1.0)); //horizon shennanigans
     return moonStarsColor;
 }
 
@@ -331,7 +336,7 @@ vec3 sampleAtmosphere(
         //only draw clouds above us and close-ish
         if(r.y > 0.0 && distanceBias < .98) {
             float cStepSize =  p.y / float(cSteps);
-            float cInit = hash(time + gl_FragCoord.x + gl_FragCoord.y * 1098.0); //dithering
+            float cInit = hash(timeOfDay + gl_FragCoord.x + gl_FragCoord.y * 1098.0); //dithering
             cInit *= cStepSize;
             float sunBrightness = getBrightness(timeOfDay);
             for (int i = 0; i < cSteps; i++) {

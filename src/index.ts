@@ -34,8 +34,6 @@ function PASSEDf(ev:any) {
   console.log(PASSED);
 }
 
-
-
 let coverage = 0.5;
 let absorbtion = 1.207523; 
 let darkness = 0.2;
@@ -46,12 +44,13 @@ let PASSED = 1.0;
 
 const setup = regl({
   context: {
-    timeOfDay: ({tick}) => (tick * 0.002 + 11.9) % 24.0,
-    lunarPhase: ({tick}) => (tick * 0.002 + 11.9) / 24.0 / 4.0,
-    view: ({tick}) => {
+    time: ({tick}) => (tick),
+    timeOfDay: ({time}) => (time * 0.02 + 11.0) % 24.0,
+    lunarPhase: ({time}) => (time * 0.02) / 24.0 / 4.0,
+    view: ({time}) => {
         return mat4.lookAt([],
         [0, 0, 0],
-        [0.5, 0.3, 0],
+        [0.5, 0.0, 0],
         [0, 1, 0])
     },
     projection: ({viewportWidth, viewportHeight}) =>
@@ -111,7 +110,7 @@ const drawSky = regl({
   vert: glsl('./gl/sky_vert.glsl'),
   uniforms: {
     PASSED: regl.prop('PASSED'),
-    time: ({tick}) => tick,
+    time: regl.context('time'),
     moonSampler: regl.prop('moon'),
     noiseSampler: regl.prop('noise'),
     starSampler: regl.prop('stars'),
