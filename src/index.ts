@@ -41,12 +41,13 @@ let absorbtion = 1.207523;
 let darkness = 0.2;
 let height = 5.5e3;
 let thickness = 10e2;
-let lunarPhase = 1.0;
+let lunarPhase = 0.0;
 let PASSED = 1.0;
 
 const setup = regl({
   context: {
-    timeOfDay: ({tick}) => (tick * 0.005) % 24.0,
+    timeOfDay: ({tick}) => (tick * 0.002 + 11.9) % 24.0,
+    lunarPhase: ({tick}) => (tick * 0.002 + 11.9) / 24.0 / 4.0,
     view: ({tick}) => {
         return mat4.lookAt([],
         [0, 0, 0],
@@ -75,21 +76,31 @@ require('resl')({
     },
     moon: {
       type: 'image',
-      src: 'src/assets/moon.jpg',
+      src: 'src/assets/moon.jpeg',
       parser: (data) => regl.texture({
         data: data,
         wrap: 'clamp',
       })
+    },
+    stars: {
+      type: 'image',
+      src: 'src/assets/stars-transparent.png',
+      parser: (data) => regl.texture({
+        data: data,
+        min: 'mipmap',
+        mag: 'linear',
+        wrap: 'repeat'
+      })
     }
   },
-  onDone: ({noise, moon}) => {
+  onDone: ({noise, moon, stars}) => {
     regl.frame(() => {
       regl.clear({
         color: [0,0,0,255]
       })
       init_slider();
       setup(() => {
-        drawSky({noise, moon, coverage, absorbtion, darkness, height, thickness, lunarPhase, PASSED})
+        drawSky({noise, moon, stars, coverage, absorbtion, darkness, height, thickness, lunarPhase, PASSED})
       })
     })
   }
@@ -103,12 +114,13 @@ const drawSky = regl({
     time: ({tick}) => tick,
     moonSampler: regl.prop('moon'),
     noiseSampler: regl.prop('noise'),
+    starSampler: regl.prop('stars'),
     coverage: regl.prop('coverage'), 
     absorbtion: regl.prop('absorbtion'), 
     darkness: regl.prop('darkness'),
     height: regl.prop('height'),
     thickness: regl.prop('thickness'),
-    lunarPhase: regl.prop('lunarPhase'),
+    lunarPhase: regl.context('lunarPhase'),
     timeOfDay: regl.context('timeOfDay'),
     viewportHeight: regl.context('viewportHeight'),
     viewportWidth: regl.context('viewportWidth'),
