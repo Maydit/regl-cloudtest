@@ -112,6 +112,7 @@ vec2 ray_vs_sphere(vec3 pos, vec3 dir, float sr) {
 
 vec4 getAmbientColor( vec3 position, 
                       vec3 sunDirection, 
+                      float timeOfDay,
                       float viewportHeight) {
     //heights
     const vec3 eyePos = vec3(0, 6372e3, 0);
@@ -184,6 +185,7 @@ vec4 getAmbientColor( vec3 position,
             ambientColor = sunIntensity * (pRlh * kRlh * totalRlh + pMie * kMie * totalMie);
         } 
     #else
+        float screenHeight = (2.0 * gl_FragCoord.y - viewportHeight) / viewportHeight;
         //skycolordef
         //cheaper sky colors.
         //What to change to make the colors nicer:
@@ -191,20 +193,32 @@ vec4 getAmbientColor( vec3 position,
         const vec3 sunriseColor = vec3(0.96, 0.69, 0.53);
         const vec3 topColor = vec3(0.78, 0.78, 0.7);
         const vec3 botColor = vec3(0.3, 0.4, 0.5);
+
+        if(r.y < -0.1) return vec4(duskColor, length(duskColor)); //horizon
         ambientColor = duskColor;
-        if(sunDir.y > -0.1) {
-            float screenHeight = (2.0 * gl_FragCoord.y - viewportHeight) / viewportHeight;
-            ambientColor = mix(topColor, botColor, 0.5 * screenHeight + 0.5);
-            vec3 sunriseGrad = mix(sunriseColor, topColor, 0.5 * screenHeight + 0.5);
-            ambientColor = mix(sunriseGrad, ambientColor, smoothstep(0.0, 0.175, sunDir.y)); //sunrise
-            if(sunDir.y < 0.0) {
-                ambientColor = mix(duskColor, ambientColor, smoothstep(-0.1, 0.0, sunDir.y)); //beneath azimuth
-            }
-            //add sun
-            if(c > 0.0) {
-                float X = 1.0 + 0.0015 * min(tan(PI*c/2.0), 2e3);
+        float x = clamp(sin(timeOfDay / 24.0) + 0.1, 0.0, 1.0);
+
+        ambientColor = mix(topColor, botColor, 0.5 * screenHeight + 0.5);
+        vec3 sunriseGrad = mix(sunriseColor, topColor, 0.5 * screenHeight + 0.5);
+        ambientColor = mix(sunriseGrad, ambientColor, smoothstep(0.0, 0.175, sunDir.y)); //sunrise
+        if(sunDir.y < 0.0) {
+            ambientColor = mix(duskColor, ambientColor, smoothstep(-0.1, 0.0, sunDir.y)); //beneath azimuth
+        }
+        //add sun
+        if(c > 0.0 && r.y > 0.0) {
+            float X = 1.0 + 0.0015 * min(tan(PI * c / 2.0), 2e3);
+            ambientColor *= X;
+        }
+        //horizon
+        if(r.y < 0.0) {
+            vec3 sunReflec = sunDir;
+            sunReflec.y *= -1.0;
+            float c2 = dot(r, sunReflec);
+            if(c2 > 0.0) { //sunrise effect
+                float X = 1.0 + 0.0015 * min(tan(PI * c2 / 2.0), 2e3) * (1.0 - clamp((-r.y * 10.0), 0.0, 0.5) / 0.5);
                 ambientColor *= X;
             }
+            ambientColor = mix(ambientColor, duskColor, clamp(-(r.y) * 10.0, 0.0, 1.0));
         }
     #endif
     return vec4(ambientColor, length(ambientColor));
@@ -255,7 +269,7 @@ vec4 getNighttimeColor(vec3 r, vec3 moonDirection, float lunarPhase, sampler2D m
 
     const float moonContrast = 0.6;
     const float moonBrightness = 1.0;
-    const float moonSize = .994; //bigger is smaller
+    const float moonSize = .9990; //bigger is smaller
     vec4 moonStarsColor = vec4(0);
 
     vec3 moonDir = normalize(moonDirection);
@@ -322,7 +336,7 @@ vec3 sampleAtmosphere(
     vec3 sunDir = normalize(sunDirection);
     vec3 r = normalize(position);
 
-    vec4 preAmbientColor = getAmbientColor(r, sunDir, viewportHeight);
+    vec4 preAmbientColor = getAmbientColor(r, sunDir, timeOfDay, viewportHeight);
     vec4 nightColor = getNighttimeColor(r, moonDir, lunarPhase, moonSampler, starSampler, noiseSampler);
     vec3 ambientColor = mix(preAmbientColor.rgb, nightColor.rgb, nightColor.w * (1.0 - smoothstep(0.0, 0.38, preAmbientColor.w)));
 
@@ -336,7 +350,7 @@ vec3 sampleAtmosphere(
         //only draw clouds above us and close-ish
         if(r.y > 0.0 && distanceBias < .98) {
             float cStepSize =  p.y / float(cSteps);
-            float cInit = hash(timeOfDay + gl_FragCoord.x + gl_FragCoord.y * 1098.0); //dithering
+            float cInit = hash(timeOfDay * 1.2315168 + gl_FragCoord.x + gl_FragCoord.y * 1098.0); //dithering
             cInit *= cStepSize;
             float sunBrightness = getBrightness(timeOfDay);
             for (int i = 0; i < cSteps; i++) {

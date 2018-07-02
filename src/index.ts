@@ -45,8 +45,8 @@ let PASSED = 1.0;
 const setup = regl({
   context: {
     time: ({tick}) => (tick),
-    timeOfDay: ({time}) => (time * 0.02 + 11.0) % 24.0,
-    lunarPhase: ({time}) => (time * 0.02) / 24.0 / 4.0,
+    timeOfDay: ({time}) => (time * 0.02 - 12) % 24.0,
+    lunarPhase: ({time}) => (time * 0.02 - 12) / 24.0 / 4.0,
     view: ({time}) => {
         return mat4.lookAt([],
         [0, 0, 0],
