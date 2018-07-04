@@ -44,7 +44,7 @@ vec2 paraboloid_to_uv(vec3 pos) {
 float getBrightness(float timeOfDay) {
     //time goes 0.0 - 12.0 day 12.0 - 24.0 night -> 0.0
     float dayNightTransition = smoothstep(11.0, 13.0, timeOfDay) + 1.0 - smoothstep(-1.0, 1.0, timeOfDay) - smoothstep(23.0, 25.0, timeOfDay);
-    return 1.0 - 0.65 * dayNightTransition;
+    return 1.0 - 0.9 * dayNightTransition;
 }
 
 // random/hash function              
@@ -351,7 +351,7 @@ vec3 sampleAtmosphere(
         if(r.y > 0.0 && distanceBias < .98) {
             float cStepSize =  p.y / float(cSteps);
             float cInit = hash(timeOfDay * 1.2315168 + gl_FragCoord.x + gl_FragCoord.y * 1098.0); //dithering
-            cInit *= cStepSize;
+            cInit *= 10.0;
             float sunBrightness = getBrightness(timeOfDay);
             for (int i = 0; i < cSteps; i++) {
                 if(color.w > .99) break;
